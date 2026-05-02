@@ -68,6 +68,18 @@ final class AccessibilityTextClient {
         }
     }
 
+    func hasFocusedTextField() -> Bool {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return false }
+        guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return false }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &raw) == .success,
+              let el = raw else { return false }
+        var textRaw: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(el as! AXUIElement, kAXValueAttribute as CFString, &textRaw)
+        return result == .success && textRaw is String
+    }
+
     func focusedTextContext() throws -> TextContext {
         guard let frontmostApplication = NSWorkspace.shared.frontmostApplication else {
             throw AccessibilityTextError.noFocusedApplication

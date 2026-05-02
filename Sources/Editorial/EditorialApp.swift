@@ -3,7 +3,7 @@ import AppKit
 
 private final class EditorialAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        NSApp.setActivationPolicy(.accessory)
         FloatingButtonController.shared.show()
     }
 }
@@ -21,12 +21,12 @@ struct EditorialApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            PopoverView()
+            MenuBarMenuView()
                 .environmentObject(appModel)
         } label: {
             MenuBarLabel(phase: appModel.phase)
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
 
         Window("Editorial", id: "editor") {
             EditorWindowView()
@@ -42,7 +42,50 @@ struct EditorialApp: App {
     }
 }
 
-// MARK: - Menu bar button label
+private struct MenuBarMenuView: View {
+    @EnvironmentObject private var appModel: AppModel
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        statusRow
+        Divider()
+        Button("Open Editorial") {
+            openWindow(id: "editor")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        Divider()
+        Button("Preferences…") {
+            openSettings()
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        Divider()
+        Button("Quit Editorial") {
+            NSApp.terminate(nil)
+        }
+    }
+
+    private var statusRow: some View {
+        Label {
+            Text(appModel.statusMessage)
+                .foregroundColor(.secondary)
+        } icon: {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 7, height: 7)
+        }
+        .disabled(true)
+    }
+
+    private var statusColor: Color {
+        switch appModel.phase {
+        case .failed: Color.edRedDel
+        case .editing, .loadingFocusedText, .applying: Color.edAccent
+        case .idle: Color.edGreen
+        }
+    }
+}
+
 private struct MenuBarLabel: View {
     let phase: AppModel.Phase
 
@@ -62,12 +105,9 @@ private struct MenuBarLabel: View {
 
     private var statusColor: Color {
         switch phase {
-        case .failed:
-            Color.edRedDel
-        case .editing, .loadingFocusedText, .applying:
-            Color.edAccent
-        case .idle:
-            Color.edGreen
+        case .failed: Color.edRedDel
+        case .editing, .loadingFocusedText, .applying: Color.edAccent
+        case .idle: Color.edGreen
         }
     }
 }

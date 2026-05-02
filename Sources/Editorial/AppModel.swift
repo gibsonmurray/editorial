@@ -26,6 +26,8 @@ final class AppModel: ObservableObject {
     @Published var processEvents: [ProcessEvent] = [
         .init(title: "Ready", detail: "Click into a text area, then capture text.")
     ]
+    @Published var hasActiveTextField = false
+    @Published var availableOllamaModels: [ModelOption] = []
 
     // Editor window source context (set from popover before opening the editor)
     @Published var editorSourceApp: ConnectedApp? = nil
@@ -33,13 +35,15 @@ final class AppModel: ObservableObject {
     private var hasPromptedForPermissions = false
     private var activationObserver: NSObjectProtocol?
     private var editTask: Task<Void, Never>?
+    private var textDetectionTimer: Timer?
     private let textClient = AccessibilityTextClient()
     private let editor: EditorialServicing
 
-    init(editor: EditorialServicing = OpenAIEditorialService()) {
+    init(editor: EditorialServicing = ProviderRoutingService()) {
         self.editor = editor
         self.preferences = EditorialPreferences.load()
         refreshCurrentApplication()
+        startTextFieldDetection()
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
@@ -235,6 +239,29 @@ final class AppModel: ObservableObject {
     private func record(_ title: String, detail: String) {
         processEvents.insert(.init(title: title, detail: detail), at: 0)
         processEvents = Array(processEvents.prefix(8))
+    }
+
+    private func startTextFieldDetection() {
+        textDetectionTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.detectTextField()
+            }
+        }
+    }
+
+    private func detectTextField() {
+        guard accessibilityTrusted else { return }
+        let detected = textClient.hasFocusedTextField()
+        if hasActiveTextField != detected {
+            hasActiveTextField = detected
+        }
+    }
+
+    func fetchOllamaModels() {
+        Task {
+            let models = await OllamaEditorialService.fetchAvailableModels()
+            await MainActor.run { self.availableOllamaModels = models }
+        }
     }
 
     private func updateCurrentApplication(from application: NSRunningApplication?) {

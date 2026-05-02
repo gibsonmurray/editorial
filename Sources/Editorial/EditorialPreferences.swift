@@ -8,6 +8,9 @@ struct EditorialPreferences: Codable, Equatable, Sendable {
     var noteDetail: NoteDetail = .brief
     var preserveFormatting = true
     var customInstructions = ""
+    var selectedModel: ModelOption = .openAIGPT4oMini
+    var openaiAPIKey: String = ""
+    var anthropicAPIKey: String = ""
 
     private static let storageKey = "editorial.preferences.v1"
 
@@ -18,7 +21,6 @@ struct EditorialPreferences: Codable, Equatable, Sendable {
         else {
             return EditorialPreferences()
         }
-
         return preferences
     }
 
@@ -55,14 +57,58 @@ struct EditorialPreferences: Codable, Equatable, Sendable {
                 : "Formatting may be cleaned up when it clearly improves readability."
         ]
 
-        let trimmedCustomInstructions = customInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedCustomInstructions.isEmpty {
-            lines.append("Additional user instructions: \(trimmedCustomInstructions)")
+        let trimmed = customInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            lines.append("Additional user instructions: \(trimmed)")
         }
 
         return lines.joined(separator: "\n")
     }
 }
+
+// MARK: - Model selection
+
+enum ModelProvider: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
+    case openai
+    case anthropic
+    case ollama
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .openai: "OpenAI"
+        case .anthropic: "Anthropic"
+        case .ollama: "Ollama"
+        }
+    }
+
+    var requiresAPIKey: Bool { self != .ollama }
+}
+
+struct ModelOption: Codable, Equatable, Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let modelId: String
+    let provider: ModelProvider
+
+    // OpenAI
+    static let openAIGPT4o      = ModelOption(id: "openai-gpt-4o",      name: "GPT-4o",       modelId: "gpt-4o",      provider: .openai)
+    static let openAIGPT4oMini  = ModelOption(id: "openai-gpt-4o-mini", name: "GPT-4o mini",  modelId: "gpt-4o-mini", provider: .openai)
+    static let openAIGPT4Turbo  = ModelOption(id: "openai-gpt-4-turbo", name: "GPT-4 Turbo",  modelId: "gpt-4-turbo", provider: .openai)
+
+    // Anthropic
+    static let claudeOpus    = ModelOption(id: "anthropic-claude-opus-4-7",    name: "Claude Opus 4",     modelId: "claude-opus-4-7",            provider: .anthropic)
+    static let claudeSonnet  = ModelOption(id: "anthropic-claude-sonnet-4-6",  name: "Claude Sonnet 4.6", modelId: "claude-sonnet-4-6",          provider: .anthropic)
+    static let claudeHaiku   = ModelOption(id: "anthropic-claude-haiku-4-5",   name: "Claude Haiku 4.5",  modelId: "claude-haiku-4-5-20251001",  provider: .anthropic)
+
+    static let builtIn: [ModelOption] = [
+        .openAIGPT4o, .openAIGPT4oMini, .openAIGPT4Turbo,
+        .claudeOpus, .claudeSonnet, .claudeHaiku
+    ]
+}
+
+// MARK: - Editing enums
 
 enum EditingMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case proofread
