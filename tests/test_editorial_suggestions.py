@@ -210,6 +210,24 @@ class EditorialSuggestionsTests(unittest.TestCase):
         self.assertIn("Fun fact: Revision rewards specificity.", output)
         self.assertIn("Done", output)
 
+    def test_progress_reporter_replaces_fun_fact_line(self) -> None:
+        stream = io.StringIO()
+        reporter = ProgressReporter(
+            enabled=True,
+            fun_facts=True,
+            stream=stream,
+            facts=["First tip.", "Second tip."],
+        )
+
+        reporter.show_fact()
+        reporter.show_fact()
+
+        output = stream.getvalue()
+        self.assertEqual(output.count("\n"), 0)
+        self.assertEqual(output.count("\rFun fact:"), 2)
+        self.assertIn("\rFun fact: First tip.", output)
+        self.assertIn("\rFun fact: Second tip.", output)
+
     def test_run_store_saves_manifest_outline_and_latest_pointer(self) -> None:
         base_dir = Path(self._testMethodName)
         store = RunStore(base_dir)
@@ -244,9 +262,9 @@ class EditorialSuggestionsTests(unittest.TestCase):
         self.assertEqual(payload["context_brief"], "style note")
         self.assertEqual(payload["sections"][0]["title"], "Chapter 1")
 
-    def test_suggest_dry_run_saves_local_run_files(self) -> None:
+    def test_suggest_dry_run_writes_markdown_directory_by_default(self) -> None:
         docx_path = Path(self._testMethodName + ".docx")
-        output_path = Path(self._testMethodName + ".md")
+        output_dir = docx_path.with_name(f"{docx_path.stem}_editorial_suggestions")
         save_dir = Path(self._testMethodName + "_runs")
         try:
             make_docx(docx_path)
@@ -260,15 +278,176 @@ class EditorialSuggestionsTests(unittest.TestCase):
                     "dry-demo",
                     "--save-dir",
                     str(save_dir),
+                    "--no-progress",
+                ])
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(output_dir.is_dir())
+            self.assertTrue((output_dir / "index.md").exists())
+            self.assertTrue((output_dir / "context_brief.md").exists())
+            chapter_files = sorted(path.name for path in output_dir.glob("*.md"))
+            self.assertIn("001-chapter-1-the-door.md", chapter_files)
+            self.assertIn("002-chapter-1-the-door-scene-2.md", chapter_files)
+            self.assertTrue((save_dir / "dry-demo" / "outline.json").exists())
+            self.assertTrue((save_dir / "dry-demo" / "report.md").exists())
+            self.assertEqual((save_dir / "latest.txt").read_text(encoding="utf-8"), "dry-demo\n")
+        finally:
+            docx_path.unlink(missing_ok=True)
+            if output_dir.exists():
+                for path in sorted(output_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                output_dir.rmdir()
+            if save_dir.exists():
+                for path in sorted(save_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                save_dir.rmdir()
+
+    def test_suggest_single_file_option_writes_combined_markdown(self) -> None:
+        docx_path = Path(self._testMethodName + ".docx")
+        output_path = Path(self._testMethodName + ".md")
+        save_dir = Path(self._testMethodName + "_runs")
+        try:
+            make_docx(docx_path)
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                exit_code = main([
+                    "suggest",
+                    str(docx_path),
+                    "--dry-run",
+                    "--single-file",
+                    "--run-id",
+                    "single-demo",
+                    "--save-dir",
+                    str(save_dir),
                     "-o",
                     str(output_path),
                     "--no-progress",
                 ])
 
             self.assertEqual(exit_code, 0)
-            self.assertTrue((save_dir / "dry-demo" / "outline.json").exists())
-            self.assertTrue((save_dir / "dry-demo" / "report.md").exists())
-            self.assertEqual((save_dir / "latest.txt").read_text(encoding="utf-8"), "dry-demo\n")
+            report = output_path.read_text(encoding="utf-8")
+            self.assertIn("# Editorial Suggestions for", report)
+            self.assertIn("## Chapter 1: The Door", report)
+            self.assertFalse(Path(f"{docx_path.stem}_editorial_suggestions").exists())
+        finally:
+            docx_path.unlink(missing_ok=True)
+            output_path.unlink(missing_ok=True)
+            if save_dir.exists():
+                for path in sorted(save_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                save_dir.rmdir()
+
+    def test_suggest_pause_saves_partial_progress_for_resume(self) -> None:
+        docx_path = Path(self._testMethodName + ".docx")
+        output_path = Path(self._testMethodName + ".md")
+        save_dir = Path(self._testMethodName + "_runs")
+        first_suggestion: Suggestion = {
+            "title": "Chapter 1: The Door",
+            "summary": "Keep this result.",
+            "suggestions": ["Saved before pause."],
+        }
+        try:
+            make_docx(docx_path)
+
+            with (
+                mock.patch("editorial_cli.cli.OpenAICompatibleClient.from_settings", return_value=object()),
+                mock.patch("editorial_cli.cli.build_context_brief", return_value="context note"),
+                mock.patch(
+                    "editorial_cli.cli.section_suggestions",
+                    side_effect=[first_suggestion, KeyboardInterrupt()],
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()) as stderr,
+            ):
+                exit_code = main([
+                    "suggest",
+                    str(docx_path),
+                    "--run-id",
+                    "pause-demo",
+                    "--save-dir",
+                    str(save_dir),
+                    "-o",
+                    str(output_path),
+                    "--no-progress",
+                    "--model",
+                    "editor-model",
+                    "--base-url",
+                    "http://localhost:11434/v1",
+                ])
+
+            self.assertEqual(exit_code, 130)
+            self.assertFalse(output_path.exists())
+            self.assertIn("Paused analysis.", stderr.getvalue())
+            partial = json.loads((save_dir / "pause-demo" / "suggestions.partial.json").read_text(encoding="utf-8"))
+            self.assertEqual(partial, [first_suggestion])
+            manifest = json.loads((save_dir / "pause-demo" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["status"], "paused")
+            self.assertEqual(manifest["completed_sections"], 1)
+        finally:
+            docx_path.unlink(missing_ok=True)
+            output_path.unlink(missing_ok=True)
+            if save_dir.exists():
+                for path in sorted(save_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                save_dir.rmdir()
+
+    def test_suggest_resume_continues_from_partial_progress(self) -> None:
+        docx_path = Path(self._testMethodName + ".docx")
+        output_path = Path(self._testMethodName + ".md")
+        save_dir = Path(self._testMethodName + "_runs")
+        first_suggestion: Suggestion = {
+            "title": "Chapter 1: The Door",
+            "summary": "Already done.",
+            "suggestions": ["Existing note."],
+        }
+        second_suggestion: Suggestion = {
+            "title": "Chapter 1: The Door - Scene 2",
+            "summary": "Newly resumed.",
+            "suggestions": ["Fresh note."],
+        }
+        try:
+            make_docx(docx_path)
+            sections = split_document(extract_docx_parts(docx_path))
+            store = RunStore(save_dir)
+            run = store.start_run(docx_path.name, sections, run_id="resume-demo")
+            store.save_text(run, "context_brief.md", "context note\n")
+            store.save_json(run, "suggestions.partial.json", [first_suggestion])
+            store.update_manifest(run, status="paused", completed_sections=1)
+
+            with (
+                mock.patch("editorial_cli.cli.OpenAICompatibleClient.from_settings", return_value=object()),
+                mock.patch("editorial_cli.cli.build_context_brief") as build_context_brief,
+                mock.patch("editorial_cli.cli.section_suggestions", return_value=second_suggestion) as section_suggestions,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                exit_code = main([
+                    "suggest",
+                    str(docx_path),
+                    "--resume",
+                    "resume-demo",
+                    "--single-file",
+                    "--save-dir",
+                    str(save_dir),
+                    "-o",
+                    str(output_path),
+                    "--no-progress",
+                    "--model",
+                    "editor-model",
+                    "--base-url",
+                    "http://localhost:11434/v1",
+                ])
+
+            self.assertEqual(exit_code, 0)
+            build_context_brief.assert_not_called()
+            self.assertEqual(section_suggestions.call_count, 1)
+            self.assertEqual(section_suggestions.call_args.args[1].title, "Chapter 1: The Door - Scene 2")
+            suggestions = json.loads((save_dir / "resume-demo" / "suggestions.json").read_text(encoding="utf-8"))
+            self.assertEqual(suggestions, [first_suggestion, second_suggestion])
+            self.assertIn("Existing note.", output_path.read_text(encoding="utf-8"))
+            self.assertIn("Fresh note.", output_path.read_text(encoding="utf-8"))
+            manifest = json.loads((save_dir / "resume-demo" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["status"], "completed")
+            self.assertEqual(manifest["completed_sections"], 2)
         finally:
             docx_path.unlink(missing_ok=True)
             output_path.unlink(missing_ok=True)

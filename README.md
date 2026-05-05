@@ -72,13 +72,31 @@ editorial doctor
 Generate suggestions:
 
 ```bash
-editorial suggest manuscript.docx -o suggestions.md
+editorial suggest manuscript.docx
+editorial suggest manuscript.docx -o suggestions/
+```
+
+Markdown output defaults to a directory with `index.md`, `context_brief.md`, and one numbered Markdown file per chapter or scene.
+
+Write one combined Markdown file when needed:
+
+```bash
+editorial suggest manuscript.docx --single-file -o suggestions.md
 ```
 
 Generate JSON instead of Markdown:
 
 ```bash
 editorial suggest manuscript.docx --output-format json -o suggestions.json
+```
+
+Pause a live analysis with `Ctrl+C`. The current run is marked `paused`, completed section suggestions stay in `suggestions.partial.json`, and the CLI prints a resume command.
+
+Resume a paused run:
+
+```bash
+editorial suggest manuscript.docx --resume latest
+editorial suggest manuscript.docx --resume 20260505-143000-a1b2c3 --save-dir ./editorial-runs
 ```
 
 Every `suggest` run is autosaved locally. By default, artifacts go to:
@@ -97,6 +115,8 @@ Each run folder includes:
 - `suggestions.json`
 - `report.md`
 - `report.json`
+
+The manifest records run `status` and `completed_sections`, so interrupted analyses can be inspected before resuming.
 
 List recent local runs:
 

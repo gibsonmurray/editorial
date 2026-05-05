@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+from pathlib import Path
 
 from editorial_cli.models import JsonValue, Section, Suggestion
 
@@ -40,6 +41,73 @@ def render_json_report(source_name: str, context_brief: str, suggestions: list[S
         "sections": suggestions,
     }
     return json.dumps(payload, indent=2) + "\n"
+
+
+def render_markdown_section_report(source_name: str, suggestion: Suggestion) -> str:
+    title = str(suggestion.get("title") or "Untitled Section").strip() or "Untitled Section"
+    lines = [
+        f"# {title}",
+        "",
+        f"Source: {source_name}",
+        "",
+    ]
+    summary = str(suggestion.get("summary") or "").strip()
+    if summary:
+        lines.extend(["**Summary:** " + summary, ""])
+    add_markdown_list(lines, "Suggestions", suggestion.get("suggestions"))
+    add_markdown_list(lines, "Style Preservation", suggestion.get("style_preservation"))
+    add_markdown_list(lines, "Continuity", suggestion.get("continuity"))
+    add_markdown_list(lines, "Line-Level Notes", suggestion.get("line_level"))
+    return "\n".join(lines).strip() + "\n"
+
+
+def render_markdown_index(source_name: str, suggestions: list[Suggestion], filenames: list[str]) -> str:
+    lines = [
+        f"# Editorial Suggestions for {source_name}",
+        "",
+        f"Generated: {dt.datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "## Files",
+        "",
+        "- [Whole-Manuscript Context and Style Brief](context_brief.md)",
+    ]
+    for suggestion, filename in zip(suggestions, filenames, strict=False):
+        title = str(suggestion.get("title") or "Untitled Section").strip() or "Untitled Section"
+        lines.append(f"- [{title}]({filename})")
+    return "\n".join(lines).strip() + "\n"
+
+
+def write_markdown_report_directory(
+    output_dir: Path,
+    source_name: str,
+    context_brief: str,
+    suggestions: list[Suggestion],
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filenames = section_report_filenames(suggestions)
+    (output_dir / "context_brief.md").write_text(render_context_brief(context_brief), encoding="utf-8")
+    (output_dir / "index.md").write_text(render_markdown_index(source_name, suggestions, filenames), encoding="utf-8")
+    for suggestion, filename in zip(suggestions, filenames, strict=False):
+        (output_dir / filename).write_text(render_markdown_section_report(source_name, suggestion), encoding="utf-8")
+    return output_dir
+
+
+def render_context_brief(context_brief: str) -> str:
+    lines = ["# Whole-Manuscript Context and Style Brief", ""]
+    lines.extend(context_brief.splitlines())
+    return "\n".join(lines).strip() + "\n"
+
+
+def section_report_filenames(suggestions: list[Suggestion]) -> list[str]:
+    seen: dict[str, int] = {}
+    filenames: list[str] = []
+    for index, suggestion in enumerate(suggestions, start=1):
+        title = str(suggestion.get("title") or "untitled-section")
+        slug = slugify_filename(title)
+        seen[slug] = seen.get(slug, 0) + 1
+        suffix = f"-{seen[slug]}" if seen[slug] > 1 else ""
+        filenames.append(f"{index:03d}-{slug}{suffix}.md")
+    return filenames
 
 
 def render_report(
@@ -99,6 +167,11 @@ def preview_text(text: str, limit: int = 120) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 3].rstrip() + "..."
+
+
+def slugify_filename(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9]+", "-", value.strip().lower()).strip("-")
+    return cleaned or "untitled-section"
 
 
 def add_markdown_list(lines: list[str], title: str, values: JsonValue) -> None:
