@@ -43,6 +43,8 @@ class ProgressReporter:
         self._rich_console: Console | None = None
         self._rich_progress: Progress | None = None
         self._rich_tasks: dict[str, TaskID] = {}
+        self._fact_line_active = False
+        self._fact_line_width = 0
         if pretty is None:
             pretty = bool(getattr(self.stream, "isatty", lambda: False)())
         if enabled and pretty:
@@ -51,6 +53,7 @@ class ProgressReporter:
     def banner(self, title: str, subtitle: str = "") -> None:
         if not self.enabled:
             return
+        self._finish_fact_line()
         if self._rich_console:
             body = subtitle or "Context-aware manuscript suggestions"
             self._rich_console.print(Panel(body, title=f"[bold cyan]{title}[/bold cyan]", border_style="cyan"))
@@ -60,6 +63,7 @@ class ProgressReporter:
     def start(self, message: str) -> None:
         if not self.enabled:
             return
+        self._finish_fact_line()
         if self._rich_console:
             self._rich_console.print(f"[bold cyan]•[/bold cyan] {message}")
         else:
@@ -72,6 +76,7 @@ class ProgressReporter:
         total = max(total, 1)
         completed = min(max(completed, 0), total)
         if self._rich_console:
+            self._finish_fact_line()
             self._ensure_rich_progress()
             task_id = self._rich_tasks.get(message)
             progress = self._rich_progress
@@ -92,6 +97,7 @@ class ProgressReporter:
     def finish(self, message: str) -> None:
         if not self.enabled:
             return
+        self._finish_fact_line()
         progress = self._rich_progress
         if progress:
             progress.stop()
@@ -106,10 +112,7 @@ class ProgressReporter:
             return
         fact = self.facts[self._fact_index % len(self.facts)]
         self._fact_index += 1
-        if self._rich_console:
-            self._rich_console.print(f"[dim]Fun fact: {fact}[/dim]")
-        else:
-            self._write(f"Fun fact: {fact}")
+        self._replace_fact_line(f"Fun fact: {fact}")
 
     def _ensure_rich_progress(self) -> None:
         if self._rich_progress:
@@ -126,7 +129,23 @@ class ProgressReporter:
         self._rich_progress.start()
 
     def _write(self, text: str) -> None:
+        self._finish_fact_line()
         print(text, file=self.stream)
+
+    def _replace_fact_line(self, text: str) -> None:
+        padding = " " * max(self._fact_line_width - len(text), 0)
+        self.stream.write(f"\r{text}{padding}")
+        self.stream.flush()
+        self._fact_line_active = True
+        self._fact_line_width = len(text)
+
+    def _finish_fact_line(self) -> None:
+        if not self._fact_line_active:
+            return
+        self.stream.write("\n")
+        self.stream.flush()
+        self._fact_line_active = False
+        self._fact_line_width = 0
 
 
 def make_reporter(args: InterfaceArgs) -> ProgressReporter:
@@ -148,12 +167,14 @@ def render_runs(runs: list[JsonObject], as_json: bool = False) -> str:
         table.add_column("Run")
         table.add_column("Source")
         table.add_column("Started")
+        table.add_column("Status")
         table.add_column("Sections", justify="right")
         for item in runs:
             table.add_row(
                 str(item.get("id", "")),
                 str(item.get("source", "")),
                 str(item.get("started_at", "")),
+                str(item.get("status", "")),
                 str(item.get("section_count", "")),
             )
         with console.capture() as capture:
@@ -163,7 +184,7 @@ def render_runs(runs: list[JsonObject], as_json: bool = False) -> str:
     for item in runs:
         lines.append(
             f"- {item.get('id')} | {item.get('source')} | "
-            f"{item.get('section_count')} sections | {item.get('started_at')}"
+            f"{item.get('section_count')} sections | {item.get('status', 'unknown')} | {item.get('started_at')}"
         )
     return "\n".join(lines)
 

@@ -27,6 +27,8 @@ class RunStore:
             "id": record.id,
             "source": source,
             "started_at": now,
+            "status": "running",
+            "completed_sections": 0,
             "section_count": len(sections),
             "sections": [
                 {
@@ -44,6 +46,16 @@ class RunStore:
         (self.base_dir / "latest.txt").write_text(record.id + "\n", encoding="utf-8")
         return record
 
+    def resume_run(self, run_id: str) -> RunRecord:
+        run_path = self.resolve_run(run_id)
+        manifest = self.load_manifest(run_path)
+        return RunRecord(
+            id=run_path.name,
+            path=run_path,
+            source=str(manifest.get("source") or ""),
+            started_at=str(manifest.get("started_at") or ""),
+        )
+
     def save_text(self, run: RunRecord, name: str, content: str) -> Path:
         path = run.path / name
         path.write_text(content, encoding="utf-8")
@@ -54,6 +66,19 @@ class RunStore:
 
     def load_json(self, run_id: str, name: str) -> JsonValue:
         return cast(JsonValue, json.loads((self.resolve_run(run_id) / name).read_text(encoding="utf-8")))
+
+    def load_manifest(self, run: RunRecord | Path) -> JsonObject:
+        path = run.path if isinstance(run, RunRecord) else run
+        payload = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("Saved run manifest is not a JSON object.")
+        return cast(JsonObject, payload)
+
+    def update_manifest(self, run: RunRecord, **updates: JsonValue) -> JsonObject:
+        manifest = self.load_manifest(run)
+        manifest.update(updates)
+        self.save_json(run, "manifest.json", manifest)
+        return manifest
 
     def resolve_run(self, run_id: str) -> Path:
         if run_id == "latest":

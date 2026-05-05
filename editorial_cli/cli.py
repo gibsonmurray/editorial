@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import shlex
 import sys
 import zipfile
 from pathlib import Path
+from typing import cast
 from xml.etree import ElementTree
 
 from editorial_cli.config import (
@@ -17,8 +20,14 @@ from editorial_cli.config import (
 from editorial_cli.document import extract_docx_parts, split_document
 from editorial_cli.errors import CliError, LLMError, friendly_error_message, print_error
 from editorial_cli.llm import OpenAICompatibleClient, build_context_brief, section_suggestions
-from editorial_cli.models import JsonObject, Section, Suggestion
-from editorial_cli.reports import render_json_report, render_markdown_report, render_outline, render_report
+from editorial_cli.models import JsonObject, RunRecord, Section, Suggestion
+from editorial_cli.reports import (
+    render_json_report,
+    render_markdown_report,
+    render_outline,
+    render_report,
+    write_markdown_report_directory,
+)
 from editorial_cli.runs import RunStore
 from editorial_cli.terminal_ui import make_reporter, render_doctor_report, render_runs
 
@@ -59,7 +68,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Generate context-aware editorial suggestions for every chapter or scene.",
     )
     add_docx_argument(suggest)
-    suggest.add_argument("-o", "--output", type=Path, help="Markdown output path.")
+    suggest.add_argument("-o", "--output", type=Path, help="Output file or directory path.")
     suggest.add_argument(
         "--output-format",
         choices=("markdown", "json"),
@@ -83,6 +92,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     suggest.add_argument("--dry-run", action="store_true", help="Parse and split the document without calling an LLM.")
     suggest.add_argument("--save-dir", type=Path, default=DEFAULT_SAVE_DIR, help="Directory for autosaved run artifacts.")
     suggest.add_argument("--run-id", help="Optional stable run id for saved artifacts.")
+    suggest.add_argument("--resume", help="Resume a paused saved run id. Use 'latest' for the most recent run.")
+    suggest.add_argument(
+        "--single-file",
+        action="store_true",
+        help="Write Markdown suggestions as one combined file instead of the default directory of section files.",
+    )
 
     outline = subparsers.add_parser("outline", help="Preview chapter/scene splits without calling an LLM.")
     add_docx_argument(outline)
@@ -202,6 +217,11 @@ def load_sections(docx: Path) -> list[Section]:
 
 
 def run_suggest(args: argparse.Namespace, config: JsonObject, dotenv: dict[str, str]) -> int:
+    if args.resume and args.run_id:
+        raise CliError("--resume cannot be combined with --run-id.")
+    if args.resume and args.dry_run:
+        raise CliError("--resume cannot be combined with --dry-run.")
+
     reporter = make_reporter(args)
     reporter.banner("Editorial", "Context-aware revision suggestions")
     reporter.start("Reading manuscript")
@@ -209,11 +229,16 @@ def run_suggest(args: argparse.Namespace, config: JsonObject, dotenv: dict[str, 
     reporter.finish(f"Found {len(sections)} sections")
 
     store = RunStore(args.save_dir)
-    run = store.start_run(args.docx.name, sections, args.run_id)
-    reporter.start(f"Saving run artifacts to {run.path}")
+    if args.resume:
+        run = store.resume_run(args.resume)
+        validate_resume_sections(store, run, sections)
+        store.update_manifest(run, status="running")
+        reporter.start(f"Resuming saved run {run.id} from {run.path}")
+    else:
+        run = store.start_run(args.docx.name, sections, args.run_id)
+        reporter.start(f"Saving run artifacts to {run.path}")
 
-    suffix = "json" if args.output_format == "json" else "md"
-    output = args.output or args.docx.with_name(f"{args.docx.stem}_editorial_suggestions.{suffix}")
+    output = resolve_suggest_output(args)
 
     suggestions: list[Suggestion]
     if args.dry_run:
@@ -226,36 +251,134 @@ def run_suggest(args: argparse.Namespace, config: JsonObject, dotenv: dict[str, 
             for section in sections
         ]
         context_brief = f"Dry run only. Found {len(sections)} sections."
-        report = render_report(args.docx.name, context_brief, suggestions, args.output_format)
         store.save_text(run, "report.md", render_markdown_report(args.docx.name, context_brief, suggestions))
         store.save_text(run, "report.json", render_json_report(args.docx.name, context_brief, suggestions))
-        output.write_text(report, encoding="utf-8")
+        store.update_manifest(
+            run,
+            status="completed",
+            completed_sections=len(suggestions),
+            completed_at=dt.datetime.now().replace(microsecond=0).isoformat(),
+        )
+        write_suggest_output(args, output, context_brief, suggestions)
         reporter.finish(f"Wrote dry-run report to {output}")
         print(f"Wrote dry-run section report to {output}")
         print(f"Saved local run to {run.path}")
         return 0
 
     client = OpenAICompatibleClient.from_settings(args, config, dotenv)
-    reporter.start("Building whole-manuscript context")
-    context_brief = build_context_brief(client, sections, args.max_context_chars, reporter)
-    store.save_text(run, "context_brief.md", context_brief + "\n")
+    suggestions = load_partial_suggestions(store, run) if args.resume else []
+    try:
+        context_path = run.path / "context_brief.md"
+        if args.resume and context_path.exists():
+            reporter.start("Loading saved whole-manuscript context")
+            context_brief = context_path.read_text(encoding="utf-8").strip()
+        else:
+            reporter.start("Building whole-manuscript context")
+            context_brief = build_context_brief(client, sections, args.max_context_chars, reporter)
+            store.save_text(run, "context_brief.md", context_brief + "\n")
 
-    suggestions = []
-    for section in sections:
-        reporter.advance("Generating section suggestions", section.index - 1, len(sections))
-        suggestion = section_suggestions(client, section, sections, context_brief, args.max_section_chars)
-        suggestions.append(suggestion)
+        if len(suggestions) > len(sections):
+            raise CliError("Saved run has more partial suggestions than the current document has sections.")
+        for index, suggestion in enumerate(suggestions):
+            if isinstance(suggestion.get("title"), str) and suggestion["title"] != sections[index].title:
+                raise CliError("Saved partial suggestions do not match this document's current section order.")
+
+        for section in sections[len(suggestions) :]:
+            reporter.advance("Generating section suggestions", section.index - 1, len(sections))
+            suggestion = section_suggestions(client, section, sections, context_brief, args.max_section_chars)
+            suggestions.append(suggestion)
+            store.save_json(run, "suggestions.partial.json", suggestions)
+            store.update_manifest(run, status="running", completed_sections=len(suggestions))
+            reporter.show_fact()
+            reporter.advance("Generating section suggestions", section.index, len(sections))
+    except KeyboardInterrupt:
         store.save_json(run, "suggestions.partial.json", suggestions)
-        reporter.show_fact()
-        reporter.advance("Generating section suggestions", section.index, len(sections))
+        store.update_manifest(
+            run,
+            status="paused",
+            completed_sections=len(suggestions),
+            paused_at=dt.datetime.now().replace(microsecond=0).isoformat(),
+        )
+        print_error(
+            "Paused analysis. Resume with: "
+            f"editorial suggest {shlex.quote(str(args.docx))} --resume {shlex.quote(run.id)} "
+            f"--save-dir {shlex.quote(str(args.save_dir))}"
+        )
+        return 130
 
     store.save_json(run, "suggestions.json", suggestions)
     markdown_report = render_markdown_report(args.docx.name, context_brief, suggestions)
     json_report = render_json_report(args.docx.name, context_brief, suggestions)
     store.save_text(run, "report.md", markdown_report)
     store.save_text(run, "report.json", json_report)
-    output.write_text(render_report(args.docx.name, context_brief, suggestions, args.output_format), encoding="utf-8")
+    store.update_manifest(
+        run,
+        status="completed",
+        completed_sections=len(suggestions),
+        completed_at=dt.datetime.now().replace(microsecond=0).isoformat(),
+    )
+    write_suggest_output(args, output, context_brief, suggestions)
     reporter.finish(f"Wrote editorial suggestions to {output}")
     print(f"Wrote editorial suggestions to {output}")
     print(f"Saved local run to {run.path}")
     return 0
+
+
+def resolve_suggest_output(args: argparse.Namespace) -> Path:
+    output = cast(Path | None, args.output)
+    docx = cast(Path, args.docx)
+    if output:
+        return output
+    if args.output_format == "json":
+        return docx.with_name(f"{docx.stem}_editorial_suggestions.json")
+    if args.single_file:
+        return docx.with_name(f"{docx.stem}_editorial_suggestions.md")
+    return docx.with_name(f"{docx.stem}_editorial_suggestions")
+
+
+def write_suggest_output(
+    args: argparse.Namespace,
+    output: Path,
+    context_brief: str,
+    suggestions: list[Suggestion],
+) -> Path:
+    if args.output_format == "json":
+        output.write_text(render_report(args.docx.name, context_brief, suggestions, "json"), encoding="utf-8")
+        return output
+    if args.single_file:
+        output.write_text(render_report(args.docx.name, context_brief, suggestions, "markdown"), encoding="utf-8")
+        return output
+    return write_markdown_report_directory(output, args.docx.name, context_brief, suggestions)
+
+
+def validate_resume_sections(store: RunStore, run: RunRecord, sections: list[Section]) -> None:
+    manifest = store.load_manifest(run)
+    manifest_count = manifest.get("section_count")
+    if isinstance(manifest_count, int) and manifest_count != len(sections):
+        raise CliError(
+            f"Saved run expects {manifest_count} sections, but the current document has {len(sections)} sections."
+        )
+    manifest_sections = manifest.get("sections")
+    if not isinstance(manifest_sections, list):
+        return
+    for index, manifest_section in enumerate(manifest_sections):
+        if index >= len(sections) or not isinstance(manifest_section, dict):
+            continue
+        title = manifest_section.get("title")
+        if isinstance(title, str) and title != sections[index].title:
+            raise CliError("Saved run section outline does not match this document.")
+
+
+def load_partial_suggestions(store: RunStore, run: RunRecord) -> list[Suggestion]:
+    partial_path = run.path / "suggestions.partial.json"
+    if not partial_path.exists():
+        return []
+    payload = store.load_json(run.id, "suggestions.partial.json")
+    if not isinstance(payload, list):
+        raise CliError("Saved partial suggestions are not a JSON list.")
+    suggestions: list[Suggestion] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise CliError("Saved partial suggestions contain a non-object item.")
+        suggestions.append(item)
+    return suggestions
