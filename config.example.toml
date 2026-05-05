@@ -1,5 +1,0 @@
-[llm]
-model = "gpt-4.1"
-base_url = "https://api.openai.com/v1"
-# Prefer .env or environment variables for real secrets when possible.
-# api_key = "..."
