@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TaskProgressColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from editorial_cli.config import DEFAULT_SAVE_DIR, config_string, config_table
+from editorial_cli.config import DEFAULT_SAVE_DIR, config_string, config_table, env_string
 from editorial_cli.models import JsonObject
 from editorial_cli.protocols import DoctorArgs, InterfaceArgs
 
@@ -168,11 +168,19 @@ def render_runs(runs: list[JsonObject], as_json: bool = False) -> str:
     return "\n".join(lines)
 
 
-def render_doctor_report(args: DoctorArgs, config: JsonObject) -> str:
+def render_doctor_report(args: DoctorArgs, config: JsonObject, dotenv: dict[str, str] | None = None) -> str:
+    dotenv = dotenv or {}
     llm_config = config_table(config, "llm")
-    model = args.model or config_string(llm_config, "model") or os.environ.get("LLM_MODEL")
+    model = (
+        args.model
+        or env_string(dotenv, "LLM_MODEL")
+        or config_string(llm_config, "model")
+        or os.environ.get("LLM_MODEL")
+    )
     base_url = (
         args.base_url
+        or env_string(dotenv, "LLM_BASE_URL")
+        or env_string(dotenv, "OPENAI_BASE_URL")
         or config_string(llm_config, "base_url")
         or os.environ.get("LLM_BASE_URL")
         or os.environ.get("OPENAI_BASE_URL")
@@ -180,6 +188,8 @@ def render_doctor_report(args: DoctorArgs, config: JsonObject) -> str:
     )
     api_key = (
         args.api_key
+        or env_string(dotenv, "LLM_API_KEY")
+        or env_string(dotenv, "OPENAI_API_KEY")
         or config_string(llm_config, "api_key")
         or os.environ.get("LLM_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
@@ -187,6 +197,7 @@ def render_doctor_report(args: DoctorArgs, config: JsonObject) -> str:
     lines = [
         "Editorial CLI doctor",
         f"config: {args.config}",
+        f"env file: {args.env_file}",
         f"model: {model or 'not configured'}",
         f"endpoint: {base_url}",
         f"api key: {'configured' if api_key else 'not configured'}",

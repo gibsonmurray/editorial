@@ -19,6 +19,7 @@ build/
 # Environment files
 .env
 .env.*
+!.env.example
 config.toml
 
 # Python / Editorial CLI

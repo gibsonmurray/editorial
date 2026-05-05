@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from typing import cast
 
-from editorial_cli.config import config_string, config_table
+from editorial_cli.config import config_string, config_table, env_string
 from editorial_cli.errors import LLMError
 from editorial_cli.models import JsonObject, Suggestion, Section
 from editorial_cli.terminal_ui import ProgressReporter
@@ -29,14 +29,27 @@ class OpenAICompatibleClient:
         self.timeout = timeout
 
     @classmethod
-    def from_settings(cls, args: LLMArgs, config: JsonObject) -> "OpenAICompatibleClient":
+    def from_settings(
+        cls,
+        args: LLMArgs,
+        config: JsonObject,
+        dotenv: dict[str, str] | None = None,
+    ) -> "OpenAICompatibleClient":
+        dotenv = dotenv or {}
         llm_config = config_table(config, "llm")
-        model = args.model or config_string(llm_config, "model") or os.environ.get("LLM_MODEL")
+        model = (
+            args.model
+            or env_string(dotenv, "LLM_MODEL")
+            or config_string(llm_config, "model")
+            or os.environ.get("LLM_MODEL")
+        )
         if not model:
             raise LLMError("Set --model or LLM_MODEL before calling the LLM.")
 
         base_url = (
             args.base_url
+            or env_string(dotenv, "LLM_BASE_URL")
+            or env_string(dotenv, "OPENAI_BASE_URL")
             or config_string(llm_config, "base_url")
             or os.environ.get("LLM_BASE_URL")
             or os.environ.get("OPENAI_BASE_URL")
@@ -44,6 +57,8 @@ class OpenAICompatibleClient:
         )
         api_key = (
             args.api_key
+            or env_string(dotenv, "LLM_API_KEY")
+            or env_string(dotenv, "OPENAI_API_KEY")
             or config_string(llm_config, "api_key")
             or os.environ.get("LLM_API_KEY")
             or os.environ.get("OPENAI_API_KEY")

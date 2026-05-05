@@ -6,7 +6,14 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
-from editorial_cli.config import DEFAULT_CONFIG_PATH, DEFAULT_SAVE_DIR, TOML_DECODE_ERROR, load_cli_config
+from editorial_cli.config import (
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_DOTENV_PATH,
+    DEFAULT_SAVE_DIR,
+    TOML_DECODE_ERROR,
+    load_cli_config,
+    load_dotenv_file,
+)
 from editorial_cli.document import extract_docx_parts, split_document
 from editorial_cli.errors import CliError, LLMError, friendly_error_message, print_error
 from editorial_cli.llm import OpenAICompatibleClient, build_context_brief, section_suggestions
@@ -37,6 +44,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=Path,
         default=DEFAULT_CONFIG_PATH,
         help=f"TOML config path. Defaults to {DEFAULT_CONFIG_PATH}.",
+    )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=DEFAULT_DOTENV_PATH,
+        help=f"Dotenv file path. Defaults to {DEFAULT_DOTENV_PATH}. Values override shell env and config.",
     )
     parser.add_argument("--debug", action="store_true", help="Show Python tracebacks for unexpected failures.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -149,8 +162,9 @@ def main(argv: list[str] | None = None) -> int:
 
 def run_command(args: argparse.Namespace) -> int:
     config = load_cli_config(args.config)
+    dotenv = load_dotenv_file(args.env_file)
     if args.command == "doctor":
-        print(render_doctor_report(args, config))
+        print(render_doctor_report(args, config, dotenv))
         return 0
 
     if args.command == "runs":
@@ -176,7 +190,7 @@ def run_command(args: argparse.Namespace) -> int:
             print(rendered, end="")
         return 0
 
-    return run_suggest(args, config)
+    return run_suggest(args, config, dotenv)
 
 
 def load_sections(docx: Path) -> list[Section]:
@@ -187,7 +201,7 @@ def load_sections(docx: Path) -> list[Section]:
     return sections
 
 
-def run_suggest(args: argparse.Namespace, config: JsonObject) -> int:
+def run_suggest(args: argparse.Namespace, config: JsonObject, dotenv: dict[str, str]) -> int:
     reporter = make_reporter(args)
     reporter.banner("Editorial", "Context-aware revision suggestions")
     reporter.start("Reading manuscript")
@@ -221,7 +235,7 @@ def run_suggest(args: argparse.Namespace, config: JsonObject) -> int:
         print(f"Saved local run to {run.path}")
         return 0
 
-    client = OpenAICompatibleClient.from_settings(args, config)
+    client = OpenAICompatibleClient.from_settings(args, config, dotenv)
     reporter.start("Building whole-manuscript context")
     context_brief = build_context_brief(client, sections, args.max_context_chars, reporter)
     store.save_text(run, "context_brief.md", context_brief + "\n")

@@ -1,16 +1,19 @@
 import contextlib
 import io
 import json
+import os
 import tomllib
 import zipfile
 from pathlib import Path
 from typing import cast
+from unittest import mock
 
 import unittest
 
 from editorial_cli.cli import main, parse_args
-from editorial_cli.config import load_cli_config
+from editorial_cli.config import load_dotenv_file, load_cli_config
 from editorial_cli.document import DocumentPart, extract_docx_parts, split_document
+from editorial_cli.llm import OpenAICompatibleClient
 from editorial_cli.models import JsonObject, Suggestion
 from editorial_cli.reports import render_json_report, render_markdown_report
 from editorial_cli.runs import RunStore
@@ -142,6 +145,36 @@ class EditorialSuggestionsTests(unittest.TestCase):
             self.assertEqual(llm_table["base_url"], "http://localhost:11434/v1")
         finally:
             config_path.unlink(missing_ok=True)
+
+    def test_dotenv_values_override_shell_environment_and_config(self) -> None:
+        env_path = Path(self._testMethodName + ".env")
+        try:
+            env_path.write_text(
+                'LLM_MODEL="dotenv-model"\nLLM_BASE_URL=http://localhost:9999/v1\nLLM_API_KEY=dotenv-key\n',
+                encoding="utf-8",
+            )
+            dotenv = load_dotenv_file(env_path)
+            args = parse_args(["--env-file", str(env_path), "doctor"])
+            config: JsonObject = {
+                "llm": {
+                    "model": "config-model",
+                    "base_url": "http://localhost:1111/v1",
+                    "api_key": "config-key",
+                }
+            }
+
+            with mock.patch.dict(os.environ, {
+                "LLM_MODEL": "shell-model",
+                "LLM_BASE_URL": "http://localhost:2222/v1",
+                "LLM_API_KEY": "shell-key",
+            }):
+                client = OpenAICompatibleClient.from_settings(args, config, dotenv)
+
+            self.assertEqual(client.model, "dotenv-model")
+            self.assertEqual(client.base_url, "http://localhost:9999/v1")
+            self.assertEqual(client.api_key, "dotenv-key")
+        finally:
+            env_path.unlink(missing_ok=True)
 
     def test_doctor_reports_configured_model(self) -> None:
         stream = io.StringIO()

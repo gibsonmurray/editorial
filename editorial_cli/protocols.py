@@ -19,4 +19,5 @@ class LLMArgs(Protocol):
 
 class DoctorArgs(LLMArgs, Protocol):
     config: Path
+    env_file: Path
     save_dir: Path
