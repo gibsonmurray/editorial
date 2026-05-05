@@ -1,23 +1,4 @@
 .DS_Store
-.AppleDouble
-
-# Swift / SwiftPM
-.build/
-.swiftpm/
-Package.resolved
-
-# Xcode
-*.xcworkspace
-*.xcuserdata/
-*.xcuserstate
-DerivedData/
-build/
-
-# CocoaPods
-Pods/
-
-# Carthage
-Carthage/Build/
 
 # Editor directories
 .vscode/
@@ -33,13 +14,7 @@ Carthage/Build/
 *.log
 
 # Binary artifacts
-*.xcarchive
-*.ipa
-.DS_Store
-.build/
-.swiftpm/
-xcuserdata/
-DerivedData/
+build/
 
 # Environment files
 .env

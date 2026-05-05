@@ -1,47 +1,142 @@
-# Editorial
+# Editorial CLI
 
-Editorial is a native macOS prototype for a Grammarly-like line editor that works across apps through the macOS Accessibility API.
+A small command-line app for turning a Word manuscript into context-aware editorial suggestions.
 
-## What works now
+It extracts text from a `.docx`, splits the manuscript into chapters and scenes, asks an OpenAI-compatible chat endpoint for a whole-manuscript context and style brief, then generates suggestions for each section without rewriting the prose.
 
-- A single menu bar popover with a compact sidebar and expandable review pane.
-- Accessibility permission prompt and status checks.
-- Focused text capture from apps that expose text through Accessibility, including many standard text fields and editors.
-- AI editing through the OpenAI Responses API.
-- A compact menu bar popover.
-- An expandable review view with a GitHub-style original-vs-draft diff preview.
-- A visible process log so users can watch capture, editing, and apply steps.
-- Apply edited text back to the focused app when that app allows Accessibility writes.
-- Copy fallback for apps that allow reading but block direct replacement.
+## Install
 
-## Run
+From this directory:
 
-```sh
-cd /Users/gibsonmurray/Developer/editorial
-export OPENAI_API_KEY="your-api-key"
-swift run Editorial
+```bash
+python3 -m pip install -e .
 ```
 
-Optional:
+That exposes the `editorial` command and installs the pretty terminal UI dependency.
 
-```sh
-export EDITORIAL_MODEL="gpt-5.4-mini"
+You can also run the script directly:
+
+```bash
+python3 editorial_suggestions.py --help
 ```
 
-On first launch, grant Accessibility permission in System Settings. After granting permission, relaunching from the same terminal is usually the least surprising path while this is still a Swift Package prototype.
+## Configure
 
-## Product direction
+Environment variables work:
 
-The next milestone is a real app bundle with:
+```bash
+export LLM_MODEL="gpt-4.1"
+export OPENAI_API_KEY="..."
+```
 
-- a global hotkey,
-- text-area overlays,
-- inline suggestions,
-- a review queue with accept/reject actions,
-- app-specific adapters for editors like Vellum when generic Accessibility behavior is limited.
+Or create `~/.config/editorial/config.toml`:
 
-## Editorial CLI
+```toml
+[llm]
+model = "gpt-4.1"
+base_url = "https://api.openai.com/v1"
+api_key = "..."
+```
 
-This repository also includes a Python CLI for `.docx` manuscript review. It splits a Word manuscript into chapters/scenes, builds a whole-manuscript context brief, calls an OpenAI-compatible LLM, and saves Markdown/JSON editorial suggestions with local run history.
+For local OpenAI-compatible servers, omit the API key if the endpoint does not need one:
 
-See [CLI.md](CLI.md) for install, configuration, and command usage.
+```toml
+[llm]
+model = "llama3.1"
+base_url = "http://localhost:11434/v1"
+```
+
+## Commands
+
+Preview how the document will be split:
+
+```bash
+editorial outline manuscript.docx
+editorial outline manuscript.docx --format markdown -o outline.md
+editorial outline manuscript.docx --format json -o outline.json
+```
+
+Check LLM configuration:
+
+```bash
+editorial doctor
+```
+
+Generate suggestions:
+
+```bash
+editorial suggest manuscript.docx -o suggestions.md
+```
+
+Generate JSON instead of Markdown:
+
+```bash
+editorial suggest manuscript.docx --output-format json -o suggestions.json
+```
+
+Every `suggest` run is autosaved locally. By default, artifacts go to:
+
+```text
+~/.local/share/editorial/runs
+```
+
+Each run folder includes:
+
+- `manifest.json`
+- `outline.md`
+- `outline.json`
+- `context_brief.md` for live LLM runs
+- `suggestions.partial.json` while generation is in progress
+- `suggestions.json`
+- `report.md`
+- `report.json`
+
+List recent local runs:
+
+```bash
+editorial runs
+editorial runs --json
+```
+
+Show a saved artifact:
+
+```bash
+editorial show latest
+editorial show latest --file report.json
+editorial show 20260505-143000-a1b2c3 --file outline.md
+```
+
+Use a custom save location or stable run id:
+
+```bash
+editorial suggest manuscript.docx --save-dir ./editorial-runs --run-id draft-2-pass
+```
+
+The old shortcut still works:
+
+```bash
+python3 editorial_suggestions.py manuscript.docx --dry-run
+```
+
+## Interface Options
+
+The CLI uses Rich panels, status lines, progress bars, and fun facts during longer work.
+
+For clean scripting or CI logs:
+
+```bash
+editorial suggest manuscript.docx --no-progress
+editorial suggest manuscript.docx --plain
+editorial suggest manuscript.docx --no-fun-facts
+```
+
+Expected operational errors fail cleanly with a short message and exit code `1`.
+Use `--debug` before the subcommand when you want the full Python traceback:
+
+```bash
+editorial --debug outline manuscript.docx
+```
+
+## Split Rules
+
+The splitter treats Word heading styles and chapter-like text such as `Chapter`, `Part`, `Prologue`, and `Epilogue` as section boundaries. Scene breaks such as `***`, `* * *`, `###`, and `---` start a new scene under the current chapter.
