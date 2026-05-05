@@ -20,7 +20,6 @@ editorial = "editorial_cli.cli:main"
 
 [tool.setuptools]
 packages = ["editorial_cli"]
-py-modules = ["editorial_suggestions"]
 
 [tool.setuptools.package-data]
 editorial_cli = ["py.typed"]
@@ -30,4 +29,4 @@ python_version = "3.11"
 strict = true
 warn_unreachable = true
 pretty = true
-files = ["editorial_cli", "editorial_suggestions.py", "tests"]
+files = ["editorial_cli", "tests"]

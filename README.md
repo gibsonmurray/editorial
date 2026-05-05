@@ -14,12 +14,6 @@ python3 -m pip install -e .
 
 That exposes the `editorial` command and installs the pretty terminal UI dependency.
 
-You can also run the script directly:
-
-```bash
-python3 editorial_suggestions.py --help
-```
-
 ## Configure
 
 The CLI loads `.env` from the current working directory by default, and those values override shell environment variables and TOML config defaults. CLI flags still win when provided directly.
@@ -125,12 +119,6 @@ Use a custom save location or stable run id:
 editorial suggest manuscript.docx --save-dir ./editorial-runs --run-id draft-2-pass
 ```
 
-The old shortcut still works:
-
-```bash
-python3 editorial_suggestions.py manuscript.docx --dry-run
-```
-
 ## Interface Options
 
 The CLI uses Rich panels, status lines, progress bars, and fun facts during longer work.
@@ -162,8 +150,6 @@ The CLI lives in the `editorial_cli` package:
 - `runs.py`: local run folders, manifests, and saved artifacts
 - `terminal_ui.py`: Rich progress UI, loading states, doctor output, and run tables
 - `errors.py`: neat user-facing CLI failures
-
-`editorial_suggestions.py` is only a small backward-compatible launcher for direct script usage.
 
 ## Development Checks
 

@@ -191,6 +191,10 @@ class EditorialSuggestionsTests(unittest.TestCase):
         pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
         self.assertEqual(pyproject["project"]["scripts"]["editorial"], "editorial_cli.cli:main")
+        self.assertNotIn("py-modules", pyproject["tool"]["setuptools"])
+
+    def test_legacy_editorial_suggestions_script_is_not_shipped(self) -> None:
+        self.assertFalse(Path("editorial_suggestions.py").exists())
 
     def test_progress_reporter_renders_progress_and_fun_fact(self) -> None:
         stream = io.StringIO()
