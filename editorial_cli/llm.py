@@ -137,9 +137,11 @@ def build_context_brief(
     sections: list[Section],
     max_chars: int,
     reporter: ProgressReporter | None = None,
+    style_guide: str | None = None,
 ) -> str:
     full_text = "\n\n".join(f"{section.title}\n{section.text}" for section in sections)
     chunks = chunk_text(full_text, max_chars)
+    style_block = f"\n\nHouse style guide to apply:\n{style_guide}" if style_guide else ""
 
     chunk_briefs: list[str] = []
     for index, chunk in enumerate(chunks, start=1):
@@ -153,6 +155,7 @@ def build_context_brief(
                         "content": (
                             "You are an expert fiction editor. Produce compact notes that preserve plot, "
                             "character arcs, recurring motifs, unresolved questions, and authorial style."
+                            + style_block
                         ),
                     },
                     {
@@ -179,6 +182,7 @@ def build_context_brief(
                 "content": (
                     "You are an expert fiction editor synthesizing manuscript notes into a reusable "
                     "context brief for later section-level critique."
+                    + style_block
                 ),
             },
             {
@@ -199,15 +203,19 @@ def section_suggestions(
     sections: list[Section],
     context_brief: str,
     max_section_chars: int,
+    focus: str | None = None,
+    style_guide: str | None = None,
 ) -> Suggestion:
     previous_title = sections[section.index - 2].title if section.index > 1 else "None"
     next_title = sections[section.index].title if section.index < len(sections) else "None"
     section_text = section.text[:max_section_chars]
     truncated = "\n\n[Section text truncated for prompt budget.]" if len(section.text) > max_section_chars else ""
+    focus_note = f"\n\nEditorial focus for this pass: {focus}" if focus else ""
+    style_block = f"\n\nHouse style guide:\n{style_guide}" if style_guide else ""
 
     prompt = f"""
 Whole-manuscript context and authorial style brief:
-{context_brief}
+{context_brief}{style_block}{focus_note}
 
 Current section: {section.title}
 Previous section: {previous_title}

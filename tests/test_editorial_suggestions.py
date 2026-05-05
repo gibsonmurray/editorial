@@ -10,12 +10,18 @@ from unittest import mock
 
 import unittest
 
-from editorial_cli.cli import main, parse_args
+from editorial_cli.cli import filter_sections, main, parse_args
 from editorial_cli.config import load_dotenv_file, load_cli_config
 from editorial_cli.document import DocumentPart, extract_docx_parts, split_document
 from editorial_cli.llm import OpenAICompatibleClient
-from editorial_cli.models import JsonObject, Suggestion
-from editorial_cli.reports import render_json_report, render_markdown_report
+from editorial_cli.models import JsonObject, Section, Suggestion
+from editorial_cli.reports import (
+    render_compare_report,
+    render_diff_report,
+    render_html_report,
+    render_json_report,
+    render_markdown_report,
+)
 from editorial_cli.runs import RunStore
 from editorial_cli.terminal_ui import ProgressReporter
 
@@ -498,6 +504,344 @@ class EditorialSuggestionsTests(unittest.TestCase):
             self.assertNotIn("Traceback", stderr.getvalue())
         finally:
             config_path.unlink(missing_ok=True)
+
+
+    def test_suggest_section_filter_targets_only_matching_section(self) -> None:
+        docx_path = Path(self._testMethodName + ".docx")
+        output_path = Path(self._testMethodName + ".md")
+        save_dir = Path(self._testMethodName + "_runs")
+        second_suggestion: Suggestion = {
+            "title": "Chapter 1: The Door - Scene 2",
+            "summary": "Only this section.",
+            "suggestions": ["Targeted note."],
+        }
+        try:
+            make_docx(docx_path)
+
+            with (
+                mock.patch("editorial_cli.cli.OpenAICompatibleClient.from_settings", return_value=object()),
+                mock.patch("editorial_cli.cli.build_context_brief", return_value="context note"),
+                mock.patch("editorial_cli.cli.section_suggestions", return_value=second_suggestion) as section_sug,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                exit_code = main([
+                    "suggest",
+                    str(docx_path),
+                    "--section", "2",
+                    "--single-file",
+                    "--run-id", "section-demo",
+                    "--save-dir", str(save_dir),
+                    "-o", str(output_path),
+                    "--no-progress",
+                    "--model", "editor-model",
+                    "--base-url", "http://localhost:11434/v1",
+                ])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(section_sug.call_count, 1)
+            self.assertEqual(section_sug.call_args.args[1].index, 2)
+            report = output_path.read_text(encoding="utf-8")
+            self.assertIn("Targeted note.", report)
+        finally:
+            docx_path.unlink(missing_ok=True)
+            output_path.unlink(missing_ok=True)
+            if save_dir.exists():
+                for path in sorted(save_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                save_dir.rmdir()
+
+    def test_suggest_focus_flag_is_passed_to_section_suggestions(self) -> None:
+        docx_path = Path(self._testMethodName + ".docx")
+        save_dir = Path(self._testMethodName + "_runs")
+        suggestion: Suggestion = {"title": "Chapter 1: The Door", "summary": "x", "suggestions": []}
+        try:
+            make_docx(docx_path)
+
+            with (
+                mock.patch("editorial_cli.cli.OpenAICompatibleClient.from_settings", return_value=object()),
+                mock.patch("editorial_cli.cli.build_context_brief", return_value="ctx"),
+                mock.patch("editorial_cli.cli.section_suggestions", return_value=suggestion) as section_sug,
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                main([
+                    "suggest", str(docx_path),
+                    "--focus", "pacing",
+                    "--run-id", "focus-demo",
+                    "--save-dir", str(save_dir),
+                    "--no-progress", "--model", "m", "--base-url", "http://localhost/v1",
+                ])
+
+            call_kwargs = section_sug.call_args
+            self.assertEqual(call_kwargs.args[5], "pacing")
+        finally:
+            docx_path.unlink(missing_ok=True)
+            output_dir = docx_path.with_name(f"{docx_path.stem}_editorial_suggestions")
+            if output_dir.exists():
+                for path in sorted(output_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                output_dir.rmdir()
+            if save_dir.exists():
+                for path in sorted(save_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                save_dir.rmdir()
+
+    def test_suggest_html_output_format_writes_html_file(self) -> None:
+        docx_path = Path(self._testMethodName + ".docx")
+        output_path = Path(self._testMethodName + ".html")
+        save_dir = Path(self._testMethodName + "_runs")
+        try:
+            make_docx(docx_path)
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                exit_code = main([
+                    "suggest", str(docx_path),
+                    "--dry-run", "--output-format", "html",
+                    "--run-id", "html-demo",
+                    "--save-dir", str(save_dir),
+                    "-o", str(output_path),
+                    "--no-progress",
+                ])
+
+            self.assertEqual(exit_code, 0)
+            html = output_path.read_text(encoding="utf-8")
+            self.assertIn("<!DOCTYPE html>", html)
+            self.assertIn("Editorial Suggestions", html)
+            self.assertIn("Chapter 1: The Door", html)
+        finally:
+            docx_path.unlink(missing_ok=True)
+            output_path.unlink(missing_ok=True)
+            if save_dir.exists():
+                for path in sorted(save_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                save_dir.rmdir()
+
+    def test_render_html_report_produces_valid_structure(self) -> None:
+        suggestions: list[Suggestion] = [
+            {
+                "title": "Chapter 1",
+                "summary": "A beginning.",
+                "suggestions": ["Cut the adverbs."],
+                "style_preservation": ["Voice is strong."],
+                "continuity": [],
+                "line_level": [],
+            }
+        ]
+        html = render_html_report("book.docx", "style notes here", suggestions)
+
+        self.assertIn("<!DOCTYPE html>", html)
+        self.assertIn("Chapter 1", html)
+        self.assertIn("Cut the adverbs.", html)
+        self.assertIn("style notes here", html)
+        self.assertIn("<details", html)
+
+    def test_render_compare_report_shows_added_removed_changed(self) -> None:
+        sug1: list[Suggestion] = [
+            {"title": "Chapter 1", "suggestions": ["Old note."]},
+            {"title": "Chapter 2", "suggestions": ["Removed section."]},
+        ]
+        sug2: list[Suggestion] = [
+            {"title": "Chapter 1", "suggestions": ["New note."]},
+            {"title": "Chapter 3", "suggestions": ["Brand new."]},
+        ]
+        report = render_compare_report("run-a", "run-b", sug1, sug2)
+
+        self.assertIn("Chapter 1", report)
+        self.assertIn("- Old note.", report)
+        self.assertIn("+ New note.", report)
+        self.assertIn("Chapter 2", report)
+        self.assertIn("removed", report)
+        self.assertIn("Chapter 3", report)
+        self.assertIn("new", report)
+
+    def test_render_diff_report_identifies_structural_changes(self) -> None:
+        sections1 = [
+            Section(title="Chapter 1", text="Original text.", index=1),
+            Section(title="Chapter 2", text="Will be removed.", index=2),
+        ]
+        sections2 = [
+            Section(title="Chapter 1", text="Changed text.", index=1),
+            Section(title="Chapter 3", text="Brand new.", index=2),
+        ]
+        report = render_diff_report("v1.docx", "v2.docx", sections1, sections2)
+
+        self.assertIn("~ Chapter 1", report)
+        self.assertIn("- Chapter 2", report)
+        self.assertIn("+ Chapter 3", report)
+        self.assertIn("1 added", report)
+        self.assertIn("1 removed", report)
+        self.assertIn("1 changed", report)
+
+    def test_diff_command_compares_two_docx_files(self) -> None:
+        docx1 = Path(self._testMethodName + "_v1.docx")
+        docx2 = Path(self._testMethodName + "_v2.docx")
+        try:
+            make_docx(docx1)
+            make_docx(docx2)
+
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(["diff", str(docx1), str(docx2), "--no-progress"])
+
+            self.assertEqual(exit_code, 0)
+            output = stdout.getvalue()
+            self.assertIn("unchanged", output)
+        finally:
+            docx1.unlink(missing_ok=True)
+            docx2.unlink(missing_ok=True)
+
+    def test_run_store_clean_removes_oldest_runs(self) -> None:
+        base_dir = Path(self._testMethodName)
+        store = RunStore(base_dir)
+        sections = split_document([DocumentPart("Chapter 1", is_heading=True), DocumentPart("Text.")])
+        try:
+            store.start_run("book.docx", sections, run_id="run-a")
+            store.start_run("book.docx", sections, run_id="run-b")
+
+            deleted = store.clean(keep=1)
+
+            self.assertEqual(len(deleted), 1)
+            remaining = store.list_runs(limit=99)
+            self.assertEqual(len(remaining), 1)
+        finally:
+            for path in sorted(base_dir.rglob("*"), reverse=True):
+                path.unlink() if path.is_file() else path.rmdir()
+            base_dir.rmdir() if base_dir.exists() else None
+
+    def test_run_store_clean_by_status_removes_only_matching_runs(self) -> None:
+        base_dir = Path(self._testMethodName)
+        store = RunStore(base_dir)
+        sections = split_document([DocumentPart("Chapter 1", is_heading=True), DocumentPart("Text.")])
+        try:
+            run_a = store.start_run("book.docx", sections, run_id="run-paused")
+            store.update_manifest(run_a, status="paused")
+            run_b = store.start_run("book.docx", sections, run_id="run-done")
+            store.update_manifest(run_b, status="completed")
+
+            deleted = store.clean(status="paused")
+
+            self.assertIn("run-paused", deleted)
+            self.assertNotIn("run-done", deleted)
+            self.assertFalse((base_dir / "run-paused").exists())
+            self.assertTrue((base_dir / "run-done").exists())
+        finally:
+            for path in sorted(base_dir.rglob("*"), reverse=True):
+                path.unlink() if path.is_file() else path.rmdir()
+            base_dir.rmdir() if base_dir.exists() else None
+
+    def test_filter_sections_by_index(self) -> None:
+        sections = [
+            Section(title="Chapter 1", text="a", index=1),
+            Section(title="Chapter 2", text="b", index=2),
+        ]
+        result = filter_sections(sections, "2")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].index, 2)
+
+    def test_filter_sections_by_title_substring(self) -> None:
+        sections = [
+            Section(title="Chapter 1: The Door", text="a", index=1),
+            Section(title="Chapter 2: The Key", text="b", index=2),
+        ]
+        result = filter_sections(sections, "door")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].title, "Chapter 1: The Door")
+
+    def test_filter_sections_raises_on_no_match(self) -> None:
+        from editorial_cli.errors import CliError
+        sections = [Section(title="Chapter 1", text="a", index=1)]
+        with self.assertRaises(CliError):
+            filter_sections(sections, "99")
+
+    def test_parse_args_compare_command(self) -> None:
+        args = parse_args(["compare", "run-a", "run-b"])
+        self.assertEqual(args.command, "compare")
+        self.assertEqual(args.run1, "run-a")
+        self.assertEqual(args.run2, "run-b")
+
+    def test_parse_args_clean_command(self) -> None:
+        args = parse_args(["clean", "--keep", "5", "--yes"])
+        self.assertEqual(args.command, "clean")
+        self.assertEqual(args.keep, 5)
+        self.assertTrue(args.yes)
+
+    def test_parse_args_watch_command(self) -> None:
+        args = parse_args(["watch", "book.docx", "--interval", "10", "--focus", "pacing"])
+        self.assertEqual(args.command, "watch")
+        self.assertEqual(args.interval, 10)
+        self.assertEqual(args.focus, "pacing")
+
+    def test_parse_args_show_open_flag(self) -> None:
+        args = parse_args(["show", "latest", "--open"])
+        self.assertEqual(args.command, "show")
+        self.assertTrue(args.open_after)
+
+    def test_compare_command_writes_to_file(self) -> None:
+        base_dir = Path(self._testMethodName + "_runs")
+        output_path = Path(self._testMethodName + "_compare.txt")
+        store = RunStore(base_dir)
+        sections = split_document([DocumentPart("Chapter 1", is_heading=True), DocumentPart("Text.")])
+        suggestion: Suggestion = {"title": "Chapter 1", "summary": "x", "suggestions": ["Note."]}
+        try:
+            run_a = store.start_run("book.docx", sections, run_id="cmp-a")
+            store.save_json(run_a, "suggestions.json", [suggestion])
+            run_b = store.start_run("book.docx", sections, run_id="cmp-b")
+            store.save_json(run_b, "suggestions.json", [suggestion])
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                exit_code = main([
+                    "compare", "cmp-a", "cmp-b",
+                    "--save-dir", str(base_dir),
+                    "-o", str(output_path),
+                ])
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(output_path.exists())
+            content = output_path.read_text(encoding="utf-8")
+            self.assertIn("cmp-a", content)
+            self.assertIn("cmp-b", content)
+        finally:
+            output_path.unlink(missing_ok=True)
+            if base_dir.exists():
+                for path in sorted(base_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                base_dir.rmdir()
+
+    def test_suggest_style_guide_flag_is_passed_to_build_context_brief(self) -> None:
+        docx_path = Path(self._testMethodName + ".docx")
+        style_path = Path(self._testMethodName + "_style.md")
+        save_dir = Path(self._testMethodName + "_runs")
+        suggestion: Suggestion = {"title": "Chapter 1: The Door", "summary": "x", "suggestions": []}
+        try:
+            make_docx(docx_path)
+            style_path.write_text("Use active voice.", encoding="utf-8")
+
+            with (
+                mock.patch("editorial_cli.cli.OpenAICompatibleClient.from_settings", return_value=object()),
+                mock.patch("editorial_cli.cli.build_context_brief", return_value="ctx") as build_ctx,
+                mock.patch("editorial_cli.cli.section_suggestions", return_value=suggestion),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                main([
+                    "suggest", str(docx_path),
+                    "--style-guide", str(style_path),
+                    "--run-id", "sg-demo",
+                    "--save-dir", str(save_dir),
+                    "--no-progress", "--model", "m", "--base-url", "http://localhost/v1",
+                ])
+
+            self.assertIn("Use active voice.", str(build_ctx.call_args))
+        finally:
+            docx_path.unlink(missing_ok=True)
+            style_path.unlink(missing_ok=True)
+            output_dir = docx_path.with_name(f"{docx_path.stem}_editorial_suggestions")
+            if output_dir.exists():
+                for path in sorted(output_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                output_dir.rmdir()
+            if save_dir.exists():
+                for path in sorted(save_dir.rglob("*"), reverse=True):
+                    path.unlink() if path.is_file() else path.rmdir()
+                save_dir.rmdir()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import shutil
 import uuid
 from pathlib import Path
 from typing import cast
@@ -99,6 +100,32 @@ class RunStore:
                 continue
         manifests.sort(key=lambda item: str(item.get("started_at", "")), reverse=True)
         return manifests[:limit]
+
+    def clean(self, keep: int = 10, status: str | None = None) -> list[str]:
+        all_runs = self.list_runs(limit=99999)
+        if status:
+            to_delete = [r for r in all_runs if str(r.get("status", "")) == status]
+        else:
+            to_delete = all_runs[keep:]
+        deleted: list[str] = []
+        for run in to_delete:
+            run_id = str(run.get("id", ""))
+            if not run_id:
+                continue
+            run_path = self.base_dir / safe_filename(run_id)
+            if run_path.exists():
+                shutil.rmtree(run_path)
+                deleted.append(run_id)
+        latest_pointer = self.base_dir / "latest.txt"
+        if latest_pointer.exists():
+            latest_id = latest_pointer.read_text(encoding="utf-8").strip()
+            if latest_id in deleted:
+                remaining = self.list_runs(limit=1)
+                if remaining:
+                    latest_pointer.write_text(str(remaining[0].get("id", "")) + "\n", encoding="utf-8")
+                else:
+                    latest_pointer.unlink(missing_ok=True)
+        return deleted
 
 
 def safe_filename(value: str) -> str:
