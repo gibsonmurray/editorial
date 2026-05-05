@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "editorial-cli"
+version = "0.1.0"
+description = "A DOCX manuscript CLI for context-aware editorial suggestions."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Private" }
+authors = [{ name = "Gibson Murray" }]
+dependencies = ["rich>=13.7"]
+
+[project.scripts]
+editorial = "editorial_suggestions:main"
+
+[tool.setuptools]
+py-modules = ["editorial_suggestions"]

@@ -44,3 +44,13 @@ DerivedData/
 # Environment files
 .env
 .env.*
+config.toml
+
+# Python / Editorial CLI
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+*_editorial_suggestions.md
+*_editorial_suggestions.json
