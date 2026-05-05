@@ -22,14 +22,27 @@ python3 editorial_suggestions.py --help
 
 ## Configure
 
-Environment variables work:
+The CLI loads `.env` from the current working directory by default, and those values override shell environment variables and TOML config defaults. CLI flags still win when provided directly.
+
+```dotenv
+LLM_MODEL=gpt-4.1
+OPENAI_API_KEY=...
+```
+
+Use a different dotenv file when needed:
+
+```bash
+editorial --env-file ./draft.env doctor
+```
+
+Shell environment variables also work:
 
 ```bash
 export LLM_MODEL="gpt-4.1"
 export OPENAI_API_KEY="..."
 ```
 
-Or create `~/.config/editorial/config.toml`:
+Or create `~/.config/editorial/config.toml` for non-secret defaults:
 
 ```toml
 [llm]
