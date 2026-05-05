@@ -13,7 +13,8 @@ authors = [{ name = "Gibson Murray" }]
 dependencies = ["rich>=13.7"]
 
 [project.scripts]
-editorial = "editorial_suggestions:main"
+editorial = "editorial_cli.cli:main"
 
 [tool.setuptools]
+packages = ["editorial_cli"]
 py-modules = ["editorial_suggestions"]

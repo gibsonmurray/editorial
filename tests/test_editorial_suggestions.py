@@ -7,19 +7,12 @@ from pathlib import Path
 
 import unittest
 
-from editorial_suggestions import (
-    DocumentPart,
-    ProgressReporter,
-    RunStore,
-    extract_docx_parts,
-    load_cli_config,
-    main,
-    parse_args,
-    render_json_report,
-    render_markdown_report,
-    render_outline,
-    split_document,
-)
+from editorial_cli.cli import main, parse_args
+from editorial_cli.config import load_cli_config
+from editorial_cli.document import DocumentPart, extract_docx_parts, split_document
+from editorial_cli.reports import render_json_report, render_markdown_report
+from editorial_cli.runs import RunStore
+from editorial_cli.terminal_ui import ProgressReporter
 
 
 def make_docx(path: Path) -> None:
@@ -159,7 +152,7 @@ class EditorialSuggestionsTests(unittest.TestCase):
     def test_pyproject_exposes_editorial_console_script(self):
         pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
-        self.assertEqual(pyproject["project"]["scripts"]["editorial"], "editorial_suggestions:main")
+        self.assertEqual(pyproject["project"]["scripts"]["editorial"], "editorial_cli.cli:main")
 
     def test_progress_reporter_renders_progress_and_fun_fact(self):
         stream = io.StringIO()
