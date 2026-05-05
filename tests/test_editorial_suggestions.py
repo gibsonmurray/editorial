@@ -4,12 +4,14 @@ import json
 import tomllib
 import zipfile
 from pathlib import Path
+from typing import cast
 
 import unittest
 
 from editorial_cli.cli import main, parse_args
 from editorial_cli.config import load_cli_config
 from editorial_cli.document import DocumentPart, extract_docx_parts, split_document
+from editorial_cli.models import JsonObject, Suggestion
 from editorial_cli.reports import render_json_report, render_markdown_report
 from editorial_cli.runs import RunStore
 from editorial_cli.terminal_ui import ProgressReporter
@@ -40,7 +42,7 @@ def make_docx(path: Path) -> None:
 
 
 class EditorialSuggestionsTests(unittest.TestCase):
-    def test_extract_docx_parts_preserves_text_and_heading_style(self):
+    def test_extract_docx_parts_preserves_text_and_heading_style(self) -> None:
         tmp = Path(self._testMethodName + ".docx")
         try:
             make_docx(tmp)
@@ -54,7 +56,7 @@ class EditorialSuggestionsTests(unittest.TestCase):
         finally:
             tmp.unlink(missing_ok=True)
 
-    def test_split_document_detects_chapters_and_scene_breaks(self):
+    def test_split_document_detects_chapters_and_scene_breaks(self) -> None:
         parts = [
             DocumentPart("Chapter 1: The Door", is_heading=True),
             DocumentPart("First paragraph."),
@@ -74,8 +76,8 @@ class EditorialSuggestionsTests(unittest.TestCase):
         self.assertIn("First paragraph.", sections[0].text)
         self.assertIn("Second scene begins.", sections[1].text)
 
-    def test_render_markdown_report_lists_suggestions_per_section(self):
-        suggestions = [
+    def test_render_markdown_report_lists_suggestions_per_section(self) -> None:
+        suggestions: list[Suggestion] = [
             {
                 "title": "Chapter 1: The Door",
                 "summary": "A threshold scene.",
@@ -90,14 +92,14 @@ class EditorialSuggestionsTests(unittest.TestCase):
         self.assertIn("- Sharpen the opening image.", report)
         self.assertIn("> style note", report)
 
-    def test_parse_args_keeps_docx_as_suggest_shortcut(self):
+    def test_parse_args_keeps_docx_as_suggest_shortcut(self) -> None:
         args = parse_args(["book.docx", "--dry-run"])
 
         self.assertEqual(args.command, "suggest")
         self.assertEqual(args.docx, Path("book.docx"))
         self.assertTrue(args.dry_run)
 
-    def test_outline_command_writes_markdown_without_llm(self):
+    def test_outline_command_writes_markdown_without_llm(self) -> None:
         docx_path = Path(self._testMethodName + ".docx")
         output_path = Path(self._testMethodName + ".md")
         try:
@@ -123,7 +125,7 @@ class EditorialSuggestionsTests(unittest.TestCase):
             docx_path.unlink(missing_ok=True)
             output_path.unlink(missing_ok=True)
 
-    def test_load_cli_config_reads_llm_table(self):
+    def test_load_cli_config_reads_llm_table(self) -> None:
         config_path = Path(self._testMethodName + ".toml")
         try:
             config_path.write_text(
@@ -133,12 +135,15 @@ class EditorialSuggestionsTests(unittest.TestCase):
 
             config = load_cli_config(config_path)
 
-            self.assertEqual(config["llm"]["model"], "editor-model")
-            self.assertEqual(config["llm"]["base_url"], "http://localhost:11434/v1")
+            llm_config = config["llm"]
+            self.assertIsInstance(llm_config, dict)
+            llm_table = cast(JsonObject, llm_config)
+            self.assertEqual(llm_table["model"], "editor-model")
+            self.assertEqual(llm_table["base_url"], "http://localhost:11434/v1")
         finally:
             config_path.unlink(missing_ok=True)
 
-    def test_doctor_reports_configured_model(self):
+    def test_doctor_reports_configured_model(self) -> None:
         stream = io.StringIO()
 
         with contextlib.redirect_stdout(stream):
@@ -149,12 +154,12 @@ class EditorialSuggestionsTests(unittest.TestCase):
         self.assertIn("model: editor-model", output)
         self.assertIn("endpoint: http://localhost:11434/v1", output)
 
-    def test_pyproject_exposes_editorial_console_script(self):
+    def test_pyproject_exposes_editorial_console_script(self) -> None:
         pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
         self.assertEqual(pyproject["project"]["scripts"]["editorial"], "editorial_cli.cli:main")
 
-    def test_progress_reporter_renders_progress_and_fun_fact(self):
+    def test_progress_reporter_renders_progress_and_fun_fact(self) -> None:
         stream = io.StringIO()
         reporter = ProgressReporter(enabled=True, fun_facts=True, stream=stream, facts=["Revision rewards specificity."])
 
@@ -168,7 +173,7 @@ class EditorialSuggestionsTests(unittest.TestCase):
         self.assertIn("Fun fact: Revision rewards specificity.", output)
         self.assertIn("Done", output)
 
-    def test_run_store_saves_manifest_outline_and_latest_pointer(self):
+    def test_run_store_saves_manifest_outline_and_latest_pointer(self) -> None:
         base_dir = Path(self._testMethodName)
         store = RunStore(base_dir)
         sections = [DocumentPart("Chapter 1", is_heading=True), DocumentPart("Text.")]
@@ -188,11 +193,12 @@ class EditorialSuggestionsTests(unittest.TestCase):
                 path.unlink() if path.is_file() else path.rmdir()
             base_dir.rmdir() if base_dir.exists() else None
 
-    def test_render_json_report_returns_machine_readable_output(self):
+    def test_render_json_report_returns_machine_readable_output(self) -> None:
+        suggestions: list[Suggestion] = [{"title": "Chapter 1", "summary": "A beginning.", "suggestions": ["Cut filler."]}]
         rendered = render_json_report(
             "book.docx",
             "style note",
-            [{"title": "Chapter 1", "summary": "A beginning.", "suggestions": ["Cut filler."]}],
+            suggestions,
         )
 
         payload = json.loads(rendered)
@@ -201,7 +207,7 @@ class EditorialSuggestionsTests(unittest.TestCase):
         self.assertEqual(payload["context_brief"], "style note")
         self.assertEqual(payload["sections"][0]["title"], "Chapter 1")
 
-    def test_suggest_dry_run_saves_local_run_files(self):
+    def test_suggest_dry_run_saves_local_run_files(self) -> None:
         docx_path = Path(self._testMethodName + ".docx")
         output_path = Path(self._testMethodName + ".md")
         save_dir = Path(self._testMethodName + "_runs")
@@ -234,7 +240,7 @@ class EditorialSuggestionsTests(unittest.TestCase):
                     path.unlink() if path.is_file() else path.rmdir()
                 save_dir.rmdir()
 
-    def test_missing_docx_fails_neatly_without_traceback(self):
+    def test_missing_docx_fails_neatly_without_traceback(self) -> None:
         stdout = io.StringIO()
         stderr = io.StringIO()
 
@@ -247,7 +253,7 @@ class EditorialSuggestionsTests(unittest.TestCase):
         self.assertIn("missing.docx", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_missing_saved_run_fails_neatly_without_traceback(self):
+    def test_missing_saved_run_fails_neatly_without_traceback(self) -> None:
         stdout = io.StringIO()
         stderr = io.StringIO()
 
@@ -259,7 +265,7 @@ class EditorialSuggestionsTests(unittest.TestCase):
         self.assertIn("No latest run has been saved yet.", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_invalid_config_fails_neatly_without_traceback(self):
+    def test_invalid_config_fails_neatly_without_traceback(self) -> None:
         config_path = Path(self._testMethodName + ".toml")
         stdout = io.StringIO()
         stderr = io.StringIO()

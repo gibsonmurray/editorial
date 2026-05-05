@@ -5,13 +5,8 @@ import zipfile
 from xml.etree import ElementTree
 
 from editorial_cli.config import TOML_DECODE_ERROR
-
-try:
-    from rich.console import Console
-    from rich.panel import Panel
-except ModuleNotFoundError:  # pragma: no cover - plain fallback remains supported.
-    Console = None
-    Panel = None
+from rich.console import Console
+from rich.panel import Panel
 
 
 class CliError(RuntimeError):
@@ -46,7 +41,7 @@ def friendly_error_message(exc: BaseException) -> str:
 
 
 def print_error(message: str) -> None:
-    if Console and Panel and sys.stderr.isatty():
+    if sys.stderr.isatty():
         Console(file=sys.stderr).print(Panel(message, title="[bold red]Error[/bold red]", border_style="red"))
     else:
         print(f"Error: {message}", file=sys.stderr)
