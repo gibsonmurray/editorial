@@ -137,6 +137,21 @@ Use `--debug` before the subcommand when you want the full Python traceback:
 editorial --debug outline manuscript.docx
 ```
 
+## Project Structure
+
+The CLI lives in the `editorial_cli` package:
+
+- `cli.py`: command parsing and command orchestration
+- `config.py`: config paths and TOML loading
+- `document.py`: DOCX extraction and chapter/scene splitting
+- `llm.py`: OpenAI-compatible client and editing prompts
+- `reports.py`: Markdown, JSON, and outline rendering
+- `runs.py`: local run folders, manifests, and saved artifacts
+- `terminal_ui.py`: Rich progress UI, loading states, doctor output, and run tables
+- `errors.py`: neat user-facing CLI failures
+
+`editorial_suggestions.py` is only a small backward-compatible launcher for direct script usage.
+
 ## Split Rules
 
 The splitter treats Word heading styles and chapter-like text such as `Chapter`, `Part`, `Prologue`, and `Epilogue` as section boundaries. Scene breaks such as `***`, `* * *`, `###`, and `---` start a new scene under the current chapter.
