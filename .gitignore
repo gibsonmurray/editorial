@@ -25,6 +25,7 @@ config.toml
 __pycache__/
 *.py[cod]
 *.egg-info/
+.mypy_cache/
 .venv/
 dist/
 *_editorial_suggestions.md

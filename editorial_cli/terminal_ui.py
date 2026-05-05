@@ -4,24 +4,16 @@ import json
 import os
 import shutil
 import sys
+from typing import TextIO
 
-from editorial_cli.config import DEFAULT_SAVE_DIR
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TaskProgressColumn, TextColumn, TimeElapsedColumn
+from rich.table import Table
 
-try:
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
-    from rich.table import Table
-except ModuleNotFoundError:  # pragma: no cover - plain fallback remains supported.
-    Console = None
-    Panel = None
-    Progress = None
-    SpinnerColumn = None
-    TextColumn = None
-    BarColumn = None
-    TaskProgressColumn = None
-    TimeElapsedColumn = None
-    Table = None
+from editorial_cli.config import DEFAULT_SAVE_DIR, config_string, config_table
+from editorial_cli.models import JsonObject
+from editorial_cli.protocols import DoctorArgs, InterfaceArgs
 
 
 FUN_FACTS = [
@@ -39,7 +31,7 @@ class ProgressReporter:
         self,
         enabled: bool = True,
         fun_facts: bool = True,
-        stream=None,
+        stream: TextIO | None = None,
         facts: list[str] | None = None,
         pretty: bool | None = None,
     ) -> None:
@@ -48,18 +40,18 @@ class ProgressReporter:
         self.stream = stream or sys.stderr
         self.facts = facts or FUN_FACTS
         self._fact_index = 0
-        self._rich_console = None
-        self._rich_progress = None
-        self._rich_tasks: dict[str, int] = {}
+        self._rich_console: Console | None = None
+        self._rich_progress: Progress | None = None
+        self._rich_tasks: dict[str, TaskID] = {}
         if pretty is None:
             pretty = bool(getattr(self.stream, "isatty", lambda: False)())
-        if enabled and pretty and Console and Progress:
+        if enabled and pretty:
             self._rich_console = Console(file=self.stream)
 
     def banner(self, title: str, subtitle: str = "") -> None:
         if not self.enabled:
             return
-        if self._rich_console and Panel:
+        if self._rich_console:
             body = subtitle or "Context-aware manuscript suggestions"
             self._rich_console.print(Panel(body, title=f"[bold cyan]{title}[/bold cyan]", border_style="cyan"))
             return
@@ -82,12 +74,15 @@ class ProgressReporter:
         if self._rich_console:
             self._ensure_rich_progress()
             task_id = self._rich_tasks.get(message)
+            progress = self._rich_progress
+            if progress is None:
+                raise RuntimeError("Progress UI was not initialized.")
             if task_id is None:
-                task_id = self._rich_progress.add_task(message, total=total)
+                task_id = progress.add_task(message, total=total)
                 self._rich_tasks[message] = task_id
-            self._rich_progress.update(task_id, completed=completed)
+            progress.update(task_id, completed=completed)
             if completed >= total:
-                self._rich_progress.stop_task(task_id)
+                progress.stop_task(task_id)
             return
         percent = int((completed / total) * 100)
         filled = int((completed / total) * 20)
@@ -97,8 +92,9 @@ class ProgressReporter:
     def finish(self, message: str) -> None:
         if not self.enabled:
             return
-        if self._rich_progress:
-            self._rich_progress.stop()
+        progress = self._rich_progress
+        if progress:
+            progress.stop()
             self._rich_progress = None
         if self._rich_console:
             self._rich_console.print(f"[bold green]✓[/bold green] {message}")
@@ -133,7 +129,7 @@ class ProgressReporter:
         print(text, file=self.stream)
 
 
-def make_reporter(args) -> ProgressReporter:
+def make_reporter(args: InterfaceArgs) -> ProgressReporter:
     return ProgressReporter(
         enabled=not getattr(args, "no_progress", False),
         fun_facts=not getattr(args, "no_fun_facts", False),
@@ -141,12 +137,12 @@ def make_reporter(args) -> ProgressReporter:
     )
 
 
-def render_runs(runs: list[dict[str, object]], as_json: bool = False) -> str:
+def render_runs(runs: list[JsonObject], as_json: bool = False) -> str:
     if as_json:
         return json.dumps(runs, indent=2)
     if not runs:
         return "No saved editorial runs yet."
-    if Console and Table and sys.stdout.isatty():
+    if sys.stdout.isatty():
         console = Console()
         table = Table(title="Saved Editorial Runs")
         table.add_column("Run")
@@ -172,19 +168,19 @@ def render_runs(runs: list[dict[str, object]], as_json: bool = False) -> str:
     return "\n".join(lines)
 
 
-def render_doctor_report(args, config: dict[str, object]) -> str:
-    llm_config = dict(config.get("llm", {})) if isinstance(config.get("llm"), dict) else {}
-    model = args.model or llm_config.get("model") or os.environ.get("LLM_MODEL")
+def render_doctor_report(args: DoctorArgs, config: JsonObject) -> str:
+    llm_config = config_table(config, "llm")
+    model = args.model or config_string(llm_config, "model") or os.environ.get("LLM_MODEL")
     base_url = (
         args.base_url
-        or llm_config.get("base_url")
+        or config_string(llm_config, "base_url")
         or os.environ.get("LLM_BASE_URL")
         or os.environ.get("OPENAI_BASE_URL")
         or "https://api.openai.com/v1"
     )
     api_key = (
         args.api_key
-        or llm_config.get("api_key")
+        or config_string(llm_config, "api_key")
         or os.environ.get("LLM_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
     )
@@ -194,7 +190,7 @@ def render_doctor_report(args, config: dict[str, object]) -> str:
         f"model: {model or 'not configured'}",
         f"endpoint: {base_url}",
         f"api key: {'configured' if api_key else 'not configured'}",
-        f"rich ui: {'available' if Console else 'not installed'}",
+        "rich ui: available",
         f"save dir: {getattr(args, 'save_dir', DEFAULT_SAVE_DIR)}",
         f"terminal width: {shutil.get_terminal_size((80, 20)).columns}",
     ]

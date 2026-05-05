@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import re
 import textwrap
 import urllib.error
 import urllib.request
+from typing import cast
 
+from editorial_cli.config import config_string, config_table
 from editorial_cli.errors import LLMError
-from editorial_cli.models import Section
+from editorial_cli.models import JsonObject, Suggestion, Section
+from editorial_cli.terminal_ui import ProgressReporter
+from editorial_cli.protocols import LLMArgs
 
 
 class OpenAICompatibleClient:
@@ -26,22 +29,22 @@ class OpenAICompatibleClient:
         self.timeout = timeout
 
     @classmethod
-    def from_settings(cls, args: argparse.Namespace, config: dict[str, object]) -> "OpenAICompatibleClient":
-        llm_config = dict(config.get("llm", {})) if isinstance(config.get("llm"), dict) else {}
-        model = args.model or llm_config.get("model") or os.environ.get("LLM_MODEL")
+    def from_settings(cls, args: LLMArgs, config: JsonObject) -> "OpenAICompatibleClient":
+        llm_config = config_table(config, "llm")
+        model = args.model or config_string(llm_config, "model") or os.environ.get("LLM_MODEL")
         if not model:
             raise LLMError("Set --model or LLM_MODEL before calling the LLM.")
 
         base_url = (
             args.base_url
-            or llm_config.get("base_url")
+            or config_string(llm_config, "base_url")
             or os.environ.get("LLM_BASE_URL")
             or os.environ.get("OPENAI_BASE_URL")
             or "https://api.openai.com/v1"
         )
         api_key = (
             args.api_key
-            or llm_config.get("api_key")
+            or config_string(llm_config, "api_key")
             or os.environ.get("LLM_API_KEY")
             or os.environ.get("OPENAI_API_KEY")
         )
@@ -51,7 +54,7 @@ class OpenAICompatibleClient:
         return cls(model=model, base_url=base_url, api_key=api_key, timeout=args.timeout)
 
     @classmethod
-    def from_env(cls, args: argparse.Namespace) -> "OpenAICompatibleClient":
+    def from_env(cls, args: LLMArgs) -> "OpenAICompatibleClient":
         return cls.from_settings(args, {})
 
     def chat(self, messages: list[dict[str, str]], temperature: float = 0.25) -> str:
@@ -72,7 +75,7 @@ class OpenAICompatibleClient:
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                data = json.loads(response.read().decode("utf-8"))
+                data = cast(JsonObject, json.loads(response.read().decode("utf-8")))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise LLMError(f"LLM request failed with HTTP {exc.code}: {detail}") from exc
@@ -80,7 +83,19 @@ class OpenAICompatibleClient:
             raise LLMError(f"Could not reach LLM endpoint: {exc}") from exc
 
         try:
-            return data["choices"][0]["message"]["content"].strip()
+            choices = data["choices"]
+            if not isinstance(choices, list) or not choices:
+                raise TypeError("missing choices")
+            first_choice = choices[0]
+            if not isinstance(first_choice, dict):
+                raise TypeError("invalid choice")
+            message = first_choice["message"]
+            if not isinstance(message, dict):
+                raise TypeError("invalid message")
+            content = message["content"]
+            if not isinstance(content, str):
+                raise TypeError("invalid content")
+            return content.strip()
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"Unexpected LLM response shape: {data}") from exc
 
@@ -106,7 +121,7 @@ def build_context_brief(
     client: OpenAICompatibleClient,
     sections: list[Section],
     max_chars: int,
-    reporter=None,
+    reporter: ProgressReporter | None = None,
 ) -> str:
     full_text = "\n\n".join(f"{section.title}\n{section.text}" for section in sections)
     chunks = chunk_text(full_text, max_chars)
@@ -169,7 +184,7 @@ def section_suggestions(
     sections: list[Section],
     context_brief: str,
     max_section_chars: int,
-) -> dict[str, object]:
+) -> Suggestion:
     previous_title = sections[section.index - 2].title if section.index > 1 else "None"
     next_title = sections[section.index].title if section.index < len(sections) else "None"
     section_text = section.text[:max_section_chars]
@@ -214,13 +229,13 @@ Respond in JSON with this shape:
     return parsed
 
 
-def parse_json_response(raw: str) -> dict[str, object]:
+def parse_json_response(raw: str) -> Suggestion:
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
     try:
-        data = json.loads(cleaned)
+        data = cast(Suggestion, json.loads(cleaned))
     except json.JSONDecodeError:
         data = {"summary": "", "suggestions": [raw], "style_preservation": [], "continuity": [], "line_level": []}
     return data

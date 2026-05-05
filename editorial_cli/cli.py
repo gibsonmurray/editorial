@@ -10,7 +10,7 @@ from editorial_cli.config import DEFAULT_CONFIG_PATH, DEFAULT_SAVE_DIR, TOML_DEC
 from editorial_cli.document import extract_docx_parts, split_document
 from editorial_cli.errors import CliError, LLMError, friendly_error_message, print_error
 from editorial_cli.llm import OpenAICompatibleClient, build_context_brief, section_suggestions
-from editorial_cli.models import Section
+from editorial_cli.models import JsonObject, Section, Suggestion
 from editorial_cli.reports import render_json_report, render_markdown_report, render_outline, render_report
 from editorial_cli.runs import RunStore
 from editorial_cli.terminal_ui import make_reporter, render_doctor_report, render_runs
@@ -187,7 +187,7 @@ def load_sections(docx: Path) -> list[Section]:
     return sections
 
 
-def run_suggest(args: argparse.Namespace, config: dict[str, object]) -> int:
+def run_suggest(args: argparse.Namespace, config: JsonObject) -> int:
     reporter = make_reporter(args)
     reporter.banner("Editorial", "Context-aware revision suggestions")
     reporter.start("Reading manuscript")
@@ -201,6 +201,7 @@ def run_suggest(args: argparse.Namespace, config: dict[str, object]) -> int:
     suffix = "json" if args.output_format == "json" else "md"
     output = args.output or args.docx.with_name(f"{args.docx.stem}_editorial_suggestions.{suffix}")
 
+    suggestions: list[Suggestion]
     if args.dry_run:
         suggestions = [
             {
@@ -225,7 +226,7 @@ def run_suggest(args: argparse.Namespace, config: dict[str, object]) -> int:
     context_brief = build_context_brief(client, sections, args.max_context_chars, reporter)
     store.save_text(run, "context_brief.md", context_brief + "\n")
 
-    suggestions: list[dict[str, object]] = []
+    suggestions = []
     for section in sections:
         reporter.advance("Generating section suggestions", section.index - 1, len(sections))
         suggestion = section_suggestions(client, section, sections, context_brief, args.max_section_chars)

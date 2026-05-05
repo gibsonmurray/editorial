@@ -4,10 +4,10 @@ import datetime as dt
 import json
 import re
 
-from editorial_cli.models import Section
+from editorial_cli.models import JsonValue, Section, Suggestion
 
 
-def render_markdown_report(source_name: str, context_brief: str, suggestions: list[dict[str, object]]) -> str:
+def render_markdown_report(source_name: str, context_brief: str, suggestions: list[Suggestion]) -> str:
     lines = [
         f"# Editorial Suggestions for {source_name}",
         "",
@@ -32,7 +32,7 @@ def render_markdown_report(source_name: str, context_brief: str, suggestions: li
     return "\n".join(lines).strip() + "\n"
 
 
-def render_json_report(source_name: str, context_brief: str, suggestions: list[dict[str, object]]) -> str:
+def render_json_report(source_name: str, context_brief: str, suggestions: list[Suggestion]) -> str:
     payload = {
         "source": source_name,
         "generated_at": dt.datetime.now().replace(microsecond=0).isoformat(),
@@ -45,7 +45,7 @@ def render_json_report(source_name: str, context_brief: str, suggestions: list[d
 def render_report(
     source_name: str,
     context_brief: str,
-    suggestions: list[dict[str, object]],
+    suggestions: list[Suggestion],
     output_format: str,
 ) -> str:
     if output_format == "json":
@@ -101,7 +101,7 @@ def preview_text(text: str, limit: int = 120) -> str:
     return compact[: limit - 3].rstrip() + "..."
 
 
-def add_markdown_list(lines: list[str], title: str, values: object) -> None:
+def add_markdown_list(lines: list[str], title: str, values: JsonValue) -> None:
     if not values:
         return
     if isinstance(values, str):

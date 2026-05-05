@@ -12,9 +12,22 @@ license = { text = "Private" }
 authors = [{ name = "Gibson Murray" }]
 dependencies = ["rich>=13.7"]
 
+[project.optional-dependencies]
+dev = ["mypy>=1.13"]
+
 [project.scripts]
 editorial = "editorial_cli.cli:main"
 
 [tool.setuptools]
 packages = ["editorial_cli"]
 py-modules = ["editorial_suggestions"]
+
+[tool.setuptools.package-data]
+editorial_cli = ["py.typed"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+pretty = true
+files = ["editorial_cli", "editorial_suggestions.py", "tests"]

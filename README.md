@@ -152,6 +152,21 @@ The CLI lives in the `editorial_cli` package:
 
 `editorial_suggestions.py` is only a small backward-compatible launcher for direct script usage.
 
+## Development Checks
+
+Install development tools:
+
+```bash
+python3 -m pip install -e ".[dev]"
+```
+
+Run the test and type-check suite:
+
+```bash
+python3 -m unittest discover -s tests
+python3 -m mypy
+```
+
 ## Split Rules
 
 The splitter treats Word heading styles and chapter-like text such as `Chapter`, `Part`, `Prologue`, and `Epilogue` as section boundaries. Scene breaks such as `***`, `* * *`, `###`, and `---` start a new scene under the current chapter.

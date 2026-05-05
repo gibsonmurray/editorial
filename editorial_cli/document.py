@@ -10,6 +10,13 @@ from editorial_cli.errors import CliError
 from editorial_cli.models import DocumentPart, Section
 
 
+__all__ = [
+    "DocumentPart",
+    "Section",
+    "extract_docx_parts",
+    "split_document",
+]
+
 WORD_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 CHAPTER_RE = re.compile(r"^\s*(chapter|prologue|epilogue|part)\b", re.IGNORECASE)
 SCENE_BREAK_RE = re.compile(r"^\s*(?:[*#~]\s*){3,}$|^\s*-{3,}\s*$")
