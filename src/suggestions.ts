@@ -302,7 +302,9 @@ export function syncSuggestionsWithDocument(
                 ...suggestion,
                 status: isAccepted
                     ? ("accepted" as const)
-                    : ("pending" as const),
+                    : suggestion.status === "rejected"
+                      ? ("rejected" as const)
+                      : ("pending" as const),
                 range: range ?? suggestion.range,
             }
         }
@@ -342,7 +344,8 @@ export function syncSuggestionsWithDocument(
             suggestion.after &&
             afterIndex === -1
         ) {
-            nextStatus = "pending"
+            nextStatus =
+                suggestion.status === "rejected" ? "rejected" : "pending"
         }
 
         if (matchStart === -1) return { ...suggestion, status: nextStatus }
