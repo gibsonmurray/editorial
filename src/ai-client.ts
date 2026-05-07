@@ -53,6 +53,213 @@ export interface CallAIOptions {
     signal?: AbortSignal
 }
 
+export interface StreamAIOptions extends CallAIOptions {
+    onChunk: (text: string) => void
+}
+
+async function readSSEStream(
+    response: Response,
+    onData: (line: string) => void,
+    signal?: AbortSignal,
+): Promise<void> {
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+    try {
+        while (true) {
+            if (signal?.aborted) break
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split("\n")
+            buffer = lines.pop() ?? ""
+            for (const line of lines) {
+                const trimmed = line.trim()
+                if (trimmed.startsWith("data: ")) onData(trimmed.slice(6))
+            }
+        }
+    } finally {
+        reader.releaseLock()
+    }
+}
+
+export async function streamAI({
+    provider,
+    model,
+    apiKey,
+    baseURL,
+    systemPrompt,
+    userText,
+    signal,
+    onChunk,
+}: StreamAIOptions): Promise<void> {
+    if (!apiKey) throw new Error("Missing API key.")
+    if (!model) throw new Error("Missing model.")
+
+    if (provider === "anthropic") {
+        const url =
+            (baseURL?.trim() || "https://api.anthropic.com") + "/v1/messages"
+        const res = await fetch(url, {
+            method: "POST",
+            signal,
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": apiKey,
+                "anthropic-version": "2023-06-01",
+                "anthropic-dangerous-direct-browser-access": "true",
+            },
+            body: JSON.stringify({
+                model,
+                max_tokens: 4096,
+                stream: true,
+                system: systemPrompt,
+                messages: [{ role: "user", content: userText }],
+            }),
+        })
+        if (!res.ok) {
+            const t = await res.text()
+            throw new Error(`Anthropic ${res.status}: ${t.slice(0, 300)}`)
+        }
+        await readSSEStream(
+            res,
+            (data) => {
+                try {
+                    const parsed = JSON.parse(data) as {
+                        type?: string
+                        delta?: { type?: string; text?: string }
+                    }
+                    if (
+                        parsed.type === "content_block_delta" &&
+                        parsed.delta?.type === "text_delta" &&
+                        parsed.delta.text
+                    )
+                        onChunk(parsed.delta.text)
+                } catch {
+                    // ignore malformed SSE lines
+                }
+            },
+            signal,
+        )
+        return
+    }
+
+    const defaultBase: Partial<Record<ProviderId, string>> = {
+        openai: "https://api.openai.com",
+        google: "https://generativelanguage.googleapis.com/v1beta/openai",
+        mistral: "https://api.mistral.ai",
+        groq: "https://api.groq.com/openai",
+        openrouter: "https://openrouter.ai/api",
+    }
+    const url =
+        (baseURL?.trim() || defaultBase[provider] || "https://api.openai.com") +
+        "/v1/chat/completions"
+
+    const res = await fetch(url, {
+        method: "POST",
+        signal,
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            model,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userText },
+            ],
+            temperature: 0.3,
+            stream: true,
+        }),
+    })
+    if (!res.ok) {
+        const t = await res.text()
+        throw new Error(`${provider} ${res.status}: ${t.slice(0, 300)}`)
+    }
+    await readSSEStream(
+        res,
+        (data) => {
+            if (data === "[DONE]") return
+            try {
+                const parsed = JSON.parse(data) as {
+                    choices?: Array<{ delta?: { content?: string } }>
+                }
+                const text = parsed.choices?.[0]?.delta?.content
+                if (text) onChunk(text)
+            } catch {
+                // ignore malformed SSE lines
+            }
+        },
+        signal,
+    )
+}
+
+export function extractEditsFromBuffer(
+    buffer: string,
+    cursor: number,
+): { ops: EditOp[]; cursor: number } {
+    const editsKeyIdx = buffer.indexOf('"edits"')
+    if (editsKeyIdx === -1) return { ops: [], cursor }
+    const arrayStart = buffer.indexOf("[", editsKeyIdx)
+    if (arrayStart === -1) return { ops: [], cursor }
+
+    let pos = Math.max(cursor, arrayStart + 1)
+    const ops: EditOp[] = []
+
+    while (pos < buffer.length) {
+        while (pos < buffer.length && /[\s,]/.test(buffer[pos])) pos++
+        if (pos >= buffer.length || buffer[pos] === "]") break
+        if (buffer[pos] !== "{") break
+
+        let depth = 0
+        let i = pos
+        let inStr = false
+        let esc = false
+
+        while (i < buffer.length) {
+            const c = buffer[i]
+            if (esc) {
+                esc = false
+                i++
+                continue
+            }
+            if (c === "\\" && inStr) {
+                esc = true
+                i++
+                continue
+            }
+            if (c === '"') {
+                inStr = !inStr
+                i++
+                continue
+            }
+            if (!inStr) {
+                if (c === "{") depth++
+                else if (c === "}") {
+                    depth--
+                    if (depth === 0) {
+                        i++
+                        break
+                    }
+                }
+            }
+            i++
+        }
+
+        if (depth !== 0) break // incomplete object — wait for more tokens
+
+        const objStr = buffer.slice(pos, i)
+        try {
+            const op = JSON.parse(objStr) as EditOp
+            if (op.type) ops.push(op)
+        } catch {
+            /* malformed, skip */
+        }
+        pos = i
+    }
+
+    return { ops, cursor: pos }
+}
+
 export async function callAI({
     provider,
     model,
