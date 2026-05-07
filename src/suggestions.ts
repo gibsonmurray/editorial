@@ -90,6 +90,14 @@ function resolvePoint(map: TextMap, offset: number) {
   return null;
 }
 
+function plainOffsetAtPosition(map: TextMap, position: number) {
+  for (let i = 0; i < map.positions.length; i += 1) {
+    const pos = map.positions[i];
+    if (pos != null && pos >= position) return i;
+  }
+  return map.text.length;
+}
+
 function normalizeTag(op: EditOp): SuggestionTag {
   if (op.tag && op.tag in TAG_META) return op.tag;
   return DEFAULT_TAG_BY_TYPE[op.type] ?? 'style';
@@ -110,15 +118,17 @@ function commonSuffixLength(a: string, b: string, prefixLength: number) {
   const max = Math.min(a.length, b.length) - prefixLength;
   let i = 0;
   while (i < max && a[a.length - 1 - i] === b[b.length - 1 - i]) {
-    const next = i + 1;
-    const aSuffixStart = a.length - next;
-    const bSuffixStart = b.length - next;
-    const wouldSplitBeforeWord = isWordChar(a[aSuffixStart]) && isWordChar(a[aSuffixStart - 1]);
-    const wouldSplitAfterWord = isWordChar(b[bSuffixStart]) && isWordChar(b[bSuffixStart - 1]);
-    if (wouldSplitBeforeWord || wouldSplitAfterWord) break;
-    i = next;
+    i += 1;
   }
   return i;
+}
+
+function splitsWordAtStart(text: string, start: number) {
+  return start > 0 && start < text.length && isWordChar(text[start - 1]) && isWordChar(text[start]);
+}
+
+function splitsWordAtEnd(text: string, end: number) {
+  return end > 0 && end < text.length && isWordChar(text[end - 1]) && isWordChar(text[end]);
 }
 
 function minimizeReplacement(before: string, after: string): MinimalChange | null {
@@ -126,13 +136,25 @@ function minimizeReplacement(before: string, after: string): MinimalChange | nul
 
   const prefix = commonPrefixLength(before, after);
   const suffix = commonSuffixLength(before, after, prefix);
-  const beforeEnd = before.length - suffix;
-  const afterEnd = after.length - suffix;
+  let beforeStart = prefix;
+  let afterStart = prefix;
+  let beforeEnd = before.length - suffix;
+  let afterEnd = after.length - suffix;
+
+  while (splitsWordAtStart(before, beforeStart) || splitsWordAtStart(after, afterStart)) {
+    beforeStart = Math.max(0, beforeStart - 1);
+    afterStart = Math.max(0, afterStart - 1);
+  }
+
+  while (splitsWordAtEnd(before, beforeEnd) || splitsWordAtEnd(after, afterEnd)) {
+    beforeEnd = Math.min(before.length, beforeEnd + 1);
+    afterEnd = Math.min(after.length, afterEnd + 1);
+  }
 
   return {
-    before: before.slice(prefix, beforeEnd),
-    after: after.slice(prefix, afterEnd),
-    startOffset: prefix,
+    before: before.slice(beforeStart, beforeEnd),
+    after: after.slice(afterStart, afterEnd),
+    startOffset: beforeStart,
   };
 }
 
@@ -226,6 +248,18 @@ export function syncSuggestionsWithDocument(editor: Editor, suggestions: EditSug
   let cursor = 0;
 
   return suggestions.map(suggestion => {
+    if (suggestion.type === 'insert' && suggestion.after) {
+      const offset = plainOffsetAtPosition(map, suggestion.range.from);
+      const insertedEnd = offset + suggestion.after.length;
+      const isAccepted = map.text.slice(offset, insertedEnd) === suggestion.after;
+      const range = resolveRange(map, offset, isAccepted ? insertedEnd : offset);
+      return {
+        ...suggestion,
+        status: isAccepted ? 'accepted' as const : 'pending' as const,
+        range: range ?? suggestion.range,
+      };
+    }
+
     const beforeIndex = suggestion.before ? map.text.indexOf(suggestion.before, cursor) : -1;
     const afterIndex = suggestion.after ? map.text.indexOf(suggestion.after, cursor) : -1;
 
