@@ -12,14 +12,15 @@ async function sha256(text: string): Promise<string> {
         .join('')
 }
 
-function isAuthenticated(): boolean {
-    const expected = import.meta.env.VITE_AUTH_HASH
-    if (!expected) return true // no auth configured — open access
-    return localStorage.getItem(STORAGE_KEY) === expected
-}
+// Hash the env password once at startup so comparison is always consistent
+const expectedHashPromise: Promise<string | null> = (() => {
+    const pw = (import.meta.env.VITE_AUTH_PASSWORD ?? '').trim()
+    if (!pw) return Promise.resolve(null)
+    return sha256(pw)
+})()
 
 export default function AuthGate({ children }: { children: ReactNode }) {
-    const [authed, setAuthed] = useState(isAuthenticated)
+    const [authed, setAuthed] = useState<boolean | null>(null)
     const [password, setPassword] = useState('')
     const [error, setError] = useState(false)
     const [loading, setLoading] = useState(false)
@@ -27,9 +28,17 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     const inputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
-        if (!authed) inputRef.current?.focus()
+        expectedHashPromise.then((expected) => {
+            if (!expected) { setAuthed(true); return }
+            setAuthed(localStorage.getItem(STORAGE_KEY) === expected)
+        })
+    }, [])
+
+    useEffect(() => {
+        if (authed === false) inputRef.current?.focus()
     }, [authed])
 
+    if (authed === null) return null
     if (authed) return <>{children}</>
 
     async function handleSubmit(e: React.FormEvent) {
@@ -37,10 +46,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         if (!password || loading) return
         setLoading(true)
         setError(false)
-        const hash = await sha256(password)
-        const expected = import.meta.env.VITE_AUTH_HASH
-        if (hash === expected) {
-            localStorage.setItem(STORAGE_KEY, hash)
+        const [inputHash, expected] = await Promise.all([sha256(password), expectedHashPromise])
+        if (expected && inputHash === expected) {
+            localStorage.setItem(STORAGE_KEY, inputHash)
             setAuthed(true)
         } else {
             setError(true)
