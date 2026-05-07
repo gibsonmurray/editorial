@@ -1360,7 +1360,9 @@
 }
 .suggestion-card {
     width: 100%;
+    min-height: 114px;
     position: relative;
+    overflow: visible;
     display: grid;
     gap: 8px;
     padding: 16px 56px 16px 20px;

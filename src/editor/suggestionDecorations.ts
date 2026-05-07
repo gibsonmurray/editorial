@@ -42,7 +42,10 @@ function buildDecorations(
                 Decoration.inline(
                     suggestion.range.from,
                     Math.max(suggestion.range.to, suggestion.range.from + 1),
-                    { class: `pm-suggestion-before${selectedClass}` },
+                    {
+                        class: `pm-suggestion-before${selectedClass}`,
+                        "data-suggestion-id": suggestion.id,
+                    },
                 ),
             )
         }
@@ -51,6 +54,7 @@ function buildDecorations(
             const node = document.createElement("span")
             node.className = `pm-suggestion-after${selectedClass}`
             node.textContent = suggestion.after
+            node.dataset.suggestionId = suggestion.id
             decorations.push(
                 Decoration.widget(suggestion.range.to, node, {
                     side: 1,
