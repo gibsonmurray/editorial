@@ -61,7 +61,7 @@ jobs:
                   echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
                   echo "Bump type: $BUMP"
 
-            # ── Bump package.json (no git tag yet — we tag after build succeeds) ──
+            # ── Bump package.json (no git tag yet — we tag after deploy succeeds) ─
             - name: Bump package.json version
               id: version
               run: |
@@ -69,20 +69,18 @@ jobs:
                   echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
                   echo "New version: $NEW_VERSION"
 
-            # ── Install & build ───────────────────────────────────────────────────
+            # ── Install ───────────────────────────────────────────────────────────
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
-            - name: Build
-              run: bun run build
-
-            # ── Pull the vercel build output (prebuilt deploy) ────────────────────
-            - name: Pull Vercel environment
-              run: bunx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+            # ── Vercel build → .vercel/output (uses buildCommand from vercel.json) ─
+            - name: Build (via Vercel)
+              run: bunx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
               env:
                   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
                   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
+            # ── Deploy the prebuilt output ─────────────────────────────────────────
             - name: Deploy to Vercel (production)
               id: deploy
               run: |
