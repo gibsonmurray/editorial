@@ -73,7 +73,14 @@ jobs:
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
-            # ── Vercel build → .vercel/output (uses buildCommand from vercel.json) ─
+            # ── Pull Vercel project settings (required before vercel build) ───────
+            - name: Pull Vercel project settings
+              run: bunx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+              env:
+                  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+                  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+            # ── Build → .vercel/output (uses buildCommand from vercel.json) ───────
             - name: Build (via Vercel)
               run: bunx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
               env:
