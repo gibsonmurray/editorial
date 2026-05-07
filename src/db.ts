@@ -6,7 +6,6 @@ export const EMPTY_DOCUMENT = {
   content: [
     {
       type: 'paragraph',
-      content: [{ type: 'text', text: 'Start writing, paste rich text, or drop a document here.' }],
     },
   ],
 };
@@ -17,7 +16,7 @@ export const createBlankDocument = (title = 'Untitled manuscript'): RichDocument
   id: crypto.randomUUID(),
   title,
   content: EMPTY_DOCUMENT,
-  html: '<p>Start writing, paste rich text, or drop a document here.</p>',
+  html: '<p></p>',
   suggestions: [],
   createdAt: now(),
   updatedAt: now(),
@@ -37,12 +36,6 @@ export class EditorialDB extends Dexie {
 }
 
 export const db = new EditorialDB();
-
-export async function ensureInitialDocument() {
-  const count = await db.documents.count();
-  if (count > 0) return;
-  await db.documents.add(createBlankDocument('Clash of the Novice Warriors'));
-}
 
 export async function upsertDocument(doc: RichDocument) {
   await db.documents.put({ ...doc, updatedAt: now() });

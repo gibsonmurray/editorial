@@ -1,4 +1,4 @@
-import { FileText, Plus, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { FileText, Plus, PanelLeftClose, PanelLeftOpen, Trash2 } from 'lucide-react';
 import type { RichDocument } from '@/types';
 
 interface DocumentLibraryProps {
@@ -9,6 +9,7 @@ interface DocumentLibraryProps {
   toggleTitle?: string;
   onNew: () => void;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
 const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
@@ -22,7 +23,7 @@ function relativeTime(time: number) {
   return formatter.format(Math.round(hours / 24), 'day');
 }
 
-export function DocumentLibrary({ documents, activeId, collapsed, onToggle, toggleTitle, onNew, onSelect }: DocumentLibraryProps) {
+export function DocumentLibrary({ documents, activeId, collapsed, onToggle, toggleTitle, onNew, onSelect, onDelete }: DocumentLibraryProps) {
   return (
     <div className={'document-library' + (collapsed ? ' collapsed' : '')}>
       <div className="library-head">
@@ -38,19 +39,40 @@ export function DocumentLibrary({ documents, activeId, collapsed, onToggle, togg
             <span>New Document</span>
           </button>
           <div className="doc-list">
-            {documents.map(doc => (
-              <button
-                type="button"
+            {documents.length === 0 ? (
+              <div className="doc-empty">
+                <strong>No documents yet</strong>
+                <span>Create a document or import a file to begin.</span>
+              </div>
+            ) : documents.map(doc => (
+              <div
                 key={doc.id}
                 className={'doc-row' + (doc.id === activeId ? ' active' : '')}
                 onClick={() => onSelect(doc.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') onSelect(doc.id);
+                }}
               >
                 <FileText size={16} />
                 <span className="doc-row-copy">
                   <span className="doc-title">{doc.title}</span>
                   <span className="doc-time">{relativeTime(doc.updatedAt)}</span>
                 </span>
-              </button>
+                <button
+                  type="button"
+                  className="doc-delete"
+                  title={`Delete ${doc.title}`}
+                  aria-label={`Delete ${doc.title}`}
+                  onClick={event => {
+                    event.stopPropagation();
+                    onDelete(doc.id);
+                  }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             ))}
           </div>
         </>

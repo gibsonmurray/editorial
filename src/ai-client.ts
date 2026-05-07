@@ -29,6 +29,7 @@ Return ONLY a JSON object (no markdown, no explanation, no code fences) in this 
 Rules:
 - "original" and "after" must be EXACT substrings of the user's text (preserve casing and whitespace).
 - Every edit must include one tag: grammar, punctuation, clarity, style, tone, concision, insertion, or deletion.
+- For replacements, make "original" and "replacement" the smallest changed span only. Do not include unchanged words around the edit.
 - Make small, targeted edits rather than one giant replace covering the whole text.
 - Each edit operates on a distinct piece of text. Do not overlap edits.
 - If no changes are needed, return {"edits": []}.

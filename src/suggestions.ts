@@ -8,6 +8,12 @@ const DEFAULT_TAG_BY_TYPE: Record<string, SuggestionTag> = {
   replace: 'style',
 };
 
+interface MinimalChange {
+  before: string;
+  after: string;
+  startOffset: number;
+}
+
 export const TAG_META: Record<SuggestionTag, { label: string; tone: string }> = {
   grammar: { label: 'Grammar', tone: 'red' },
   punctuation: { label: 'Punctuation', tone: 'amber' },
@@ -47,6 +53,11 @@ export function plainTextWithPositions(editor: Editor): TextMap {
 }
 
 function resolveRange(map: TextMap, start: number, end: number) {
+  if (start === end) {
+    const point = resolvePoint(map, start);
+    return point == null ? null : { from: point, to: point };
+  }
+
   let from: number | null = null;
   let to: number | null = null;
 
@@ -69,9 +80,67 @@ function resolveRange(map: TextMap, start: number, end: number) {
   return { from, to: Math.max(from, to) };
 }
 
+function resolvePoint(map: TextMap, offset: number) {
+  for (let i = Math.min(offset, map.positions.length - 1); i < map.positions.length; i += 1) {
+    if (map.positions[i] != null) return map.positions[i];
+  }
+  for (let i = Math.min(offset - 1, map.positions.length - 1); i >= 0; i -= 1) {
+    if (map.positions[i] != null) return (map.positions[i] as number) + 1;
+  }
+  return null;
+}
+
 function normalizeTag(op: EditOp): SuggestionTag {
   if (op.tag && op.tag in TAG_META) return op.tag;
   return DEFAULT_TAG_BY_TYPE[op.type] ?? 'style';
+}
+
+function commonPrefixLength(a: string, b: string) {
+  const max = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < max && a[i] === b[i]) i += 1;
+  return i;
+}
+
+function isWordChar(char: string | undefined) {
+  return !!char && /[\p{L}\p{N}'’-]/u.test(char);
+}
+
+function commonSuffixLength(a: string, b: string, prefixLength: number) {
+  const max = Math.min(a.length, b.length) - prefixLength;
+  let i = 0;
+  while (i < max && a[a.length - 1 - i] === b[b.length - 1 - i]) {
+    const next = i + 1;
+    const aSuffixStart = a.length - next;
+    const bSuffixStart = b.length - next;
+    const wouldSplitBeforeWord = isWordChar(a[aSuffixStart]) && isWordChar(a[aSuffixStart - 1]);
+    const wouldSplitAfterWord = isWordChar(b[bSuffixStart]) && isWordChar(b[bSuffixStart - 1]);
+    if (wouldSplitBeforeWord || wouldSplitAfterWord) break;
+    i = next;
+  }
+  return i;
+}
+
+function minimizeReplacement(before: string, after: string): MinimalChange | null {
+  if (before === after) return null;
+
+  const prefix = commonPrefixLength(before, after);
+  const suffix = commonSuffixLength(before, after, prefix);
+  const beforeEnd = before.length - suffix;
+  const afterEnd = after.length - suffix;
+
+  return {
+    before: before.slice(prefix, beforeEnd),
+    after: after.slice(prefix, afterEnd),
+    startOffset: prefix,
+  };
+}
+
+function suggestionTypeForChange(op: EditOp, before: string, after: string) {
+  if (op.type !== 'replace') return op.type;
+  if (!before && after) return 'insert';
+  if (before && !after) return 'delete';
+  return 'replace';
 }
 
 export function suggestionsFromEdits(editor: Editor, edits: EditOp[]): EditSuggestion[] {
@@ -90,6 +159,13 @@ export function suggestionsFromEdits(editor: Editor, edits: EditOp[]): EditSugge
       after = op.replacement ?? '';
       if (!before) return;
       start = map.text.indexOf(before, cursor);
+      end = start + before.length;
+      if (start === -1) return;
+      const minimal = minimizeReplacement(before, after);
+      if (!minimal) return;
+      before = minimal.before;
+      after = minimal.after;
+      start += minimal.startOffset;
       end = start + before.length;
     } else if (op.type === 'delete') {
       before = op.original ?? '';
@@ -117,7 +193,7 @@ export function suggestionsFromEdits(editor: Editor, edits: EditOp[]): EditSugge
 
     suggestions.push({
       id: `s${Date.now()}-${index}`,
-      type: op.type,
+      type: suggestionTypeForChange(op, before, after),
       before,
       after,
       tag: normalizeTag(op),
@@ -128,6 +204,55 @@ export function suggestionsFromEdits(editor: Editor, edits: EditOp[]): EditSugge
   });
 
   return suggestions;
+}
+
+function sameSuggestionState(a: EditSuggestion, b: EditSuggestion) {
+  return (
+    a.status === b.status
+    && a.range.from === b.range.from
+    && a.range.to === b.range.to
+    && a.type === b.type
+  );
+}
+
+export function suggestionsNeedSync(current: EditSuggestion[], next: EditSuggestion[]) {
+  return current.length !== next.length || current.some((item, index) => !sameSuggestionState(item, next[index]));
+}
+
+export function syncSuggestionsWithDocument(editor: Editor, suggestions: EditSuggestion[]): EditSuggestion[] {
+  if (!suggestions.length) return suggestions;
+
+  const map = plainTextWithPositions(editor);
+  let cursor = 0;
+
+  return suggestions.map(suggestion => {
+    const beforeIndex = suggestion.before ? map.text.indexOf(suggestion.before, cursor) : -1;
+    const afterIndex = suggestion.after ? map.text.indexOf(suggestion.after, cursor) : -1;
+
+    let nextStatus = suggestion.status;
+    let matchStart = -1;
+    let matchEnd = -1;
+
+    if (suggestion.before && beforeIndex !== -1 && (afterIndex === -1 || beforeIndex <= afterIndex)) {
+      nextStatus = suggestion.status === 'rejected' ? 'rejected' : 'pending';
+      matchStart = beforeIndex;
+      matchEnd = beforeIndex + suggestion.before.length;
+    } else if (suggestion.after && afterIndex !== -1) {
+      nextStatus = 'accepted';
+      matchStart = afterIndex;
+      matchEnd = afterIndex + suggestion.after.length;
+    } else if (suggestion.type === 'delete' && suggestion.before && beforeIndex === -1) {
+      nextStatus = 'accepted';
+    } else if (suggestion.type === 'insert' && suggestion.after && afterIndex === -1) {
+      nextStatus = 'pending';
+    }
+
+    if (matchStart === -1) return { ...suggestion, status: nextStatus };
+
+    const range = resolveRange(map, matchStart, matchEnd);
+    cursor = Math.max(cursor, matchEnd);
+    return range ? { ...suggestion, status: nextStatus, range } : { ...suggestion, status: nextStatus };
+  });
 }
 
 export function applySuggestion(editor: Editor, suggestion: EditSuggestion) {

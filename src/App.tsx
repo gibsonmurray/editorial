@@ -8,8 +8,15 @@ import React, {
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Editor, JSONContent } from '@tiptap/react';
 import { callAI, parseEditsResponse, ACTION_INSTRUCTIONS, SYSTEM_TEMPLATE, synthesizeInstructionName } from './ai-client';
-import { createBlankDocument, db, ensureInitialDocument, touchInstruction, upsertDocument } from './db';
-import { applySuggestion, focusSuggestion, plainTextWithPositions, suggestionsFromEdits } from './suggestions';
+import { createBlankDocument, db, touchInstruction, upsertDocument } from './db';
+import {
+  applySuggestion,
+  focusSuggestion,
+  plainTextWithPositions,
+  suggestionsFromEdits,
+  suggestionsNeedSync,
+  syncSuggestionsWithDocument,
+} from './suggestions';
 import { exportDocument, fileToImportedDocument, type ExportFormat } from './import-export';
 import type {
   ActionId,
@@ -22,7 +29,7 @@ import type {
   SuggestionTag,
 } from './types';
 import { Toolbar } from '@/components/Toolbar';
-import { Sidebar } from '@/components/Sidebar';
+import { Sidebar, type SidebarMode } from '@/components/Sidebar';
 import { RichEditor } from '@/components/RichEditor';
 import { SuggestionSidecar } from '@/components/SuggestionSidecar';
 import { ErrorAlert } from '@/components/ErrorAlert';
@@ -82,6 +89,7 @@ export default function App() {
   const [apiKey, setApiKey] = usePersistedState<string>('apiKey', '');
   const [baseURL, setBaseURL] = usePersistedState<string>('baseURL', '');
   const [activeDocumentId, setActiveDocumentId] = usePersistedState<string | null>('activeDocumentId', null);
+  const [sidebarMode, setSidebarMode] = usePersistedState<SidebarMode>('sidebarMode', 'documents');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState<boolean>('sidebarCollapsed', false);
   const [suggestionsCollapsed, setSuggestionsCollapsed] = usePersistedState<boolean>('suggestionsCollapsed', false);
   const [inlineDiffs, setInlineDiffs] = usePersistedState<boolean>('inlineDiffs', true);
@@ -100,27 +108,19 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<RichDocument | null>(null);
   const [copied, setCopied] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | null>(null);
 
   const activeDocument = useMemo(
-    () => documents.find(doc => doc.id === activeDocumentId) ?? documents[0] ?? null,
+    () => documents.find(doc => doc.id === activeDocumentId) ?? null,
     [activeDocumentId, documents],
   );
 
   useEffect(() => {
-    void ensureInitialDocument();
-  }, []);
-
-  useEffect(() => {
-    if (!activeDocument && documents.length === 0) return;
-    if (!activeDocument && documents[0]) {
-      setActiveDocumentId(documents[0].id);
-      return;
-    }
-    if (activeDocument && activeDocument.id !== activeDocumentId) setActiveDocumentId(activeDocument.id);
+    if (activeDocumentId && !activeDocument) setActiveDocumentId(null);
   }, [activeDocument, activeDocumentId, documents, setActiveDocumentId]);
 
   useEffect(() => {
@@ -141,11 +141,24 @@ export default function App() {
   const stats = useMemo(() => wordsAndChars(currentText), [currentText]);
   const pendingCount = localSuggestions.filter(s => s.status === 'pending').length;
   const hasText = !!currentText.trim();
+  const hasDocument = !!activeDocument;
 
   const persistActiveDocument = useCallback((patch: Partial<RichDocument>) => {
     if (!activeDocument) return;
     void upsertDocument({ ...activeDocument, suggestions: localSuggestions, ...patch });
   }, [activeDocument, localSuggestions]);
+
+  useEffect(() => {
+    if (!editor || !activeDocument || !localSuggestions.length) return;
+    const synced = syncSuggestionsWithDocument(editor, localSuggestions);
+    if (!suggestionsNeedSync(localSuggestions, synced)) return;
+    setLocalSuggestions(synced);
+    const nextFocused = synced.find(s => s.id === focusedSuggestionId && s.status === 'pending')
+      ?? synced.find(s => s.status === 'pending')
+      ?? null;
+    setFocusedSuggestionId(nextFocused?.id ?? null);
+    void upsertDocument({ ...activeDocument, content: editor.getJSON(), html: editor.getHTML(), suggestions: synced });
+  }, [activeDocument, editor, editorText, focusedSuggestionId, localSuggestions]);
 
   const scheduleDocumentSave = useCallback((content: JSONContent, html: string, text: string) => {
     setEditorText(text);
@@ -153,7 +166,7 @@ export default function App() {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       const firstLine = text.trim().split(/\n/)[0]?.slice(0, 80);
-      const title = activeDocument.title === 'Untitled manuscript' && firstLine ? firstLine : activeDocument.title;
+      const title = (!activeDocument.title || activeDocument.title === 'Untitled manuscript') && firstLine ? firstLine : activeDocument.title;
       void upsertDocument({ ...activeDocument, title, content, html, suggestions: localSuggestions });
     }, 300);
   }, [activeDocument, localSuggestions]);
@@ -335,6 +348,12 @@ export default function App() {
     persistActiveDocument({ content: editor.getJSON(), html: editor.getHTML(), suggestions: [] });
   };
 
+  const deleteDocument = async (doc: RichDocument) => {
+    await db.documents.delete(doc.id);
+    if (activeDocumentId !== doc.id) return;
+    setActiveDocumentId(null);
+  };
+
   const activeSuggestion = focusedSuggestionId ? localSuggestions.find(s => s.id === focusedSuggestionId && s.status === 'pending') : null;
 
   return (
@@ -347,11 +366,14 @@ export default function App() {
         busyAction={busyAction}
         loading={!!busyAction}
         hasText={hasText}
+        hasDocument={hasDocument}
         hasKey={!!apiKey}
         stats={stats}
         documents={documents}
         activeDocumentId={activeDocument?.id ?? null}
+        mode={sidebarMode}
         sidebarCollapsed={sidebarCollapsed}
+        onModeChange={setSidebarMode}
         onToggleSidebar={() => setSidebarCollapsed(v => !v)}
         onNewDocument={async () => {
           const doc = createBlankDocument();
@@ -359,6 +381,10 @@ export default function App() {
           setActiveDocumentId(doc.id);
         }}
         onSelectDocument={setActiveDocumentId}
+        onDeleteDocument={id => {
+          const doc = documents.find(item => item.id === id);
+          if (doc) setDocumentToDelete(doc);
+        }}
       />
 
       <main className="pane">
@@ -377,10 +403,10 @@ export default function App() {
           onExport={() => setExportOpen(true)}
           onCopy={onCopy}
           onClear={() => setConfirmClear(true)}
-          onHistory={() => setSidebarCollapsed(false)}
           onSettings={() => setSettingsOpen(true)}
           busy={!!busyAction}
           hasText={hasText}
+          hasDocument={hasDocument}
         />
 
         {error && <ErrorAlert error={error} onDismiss={() => setError(null)} />}
@@ -390,26 +416,49 @@ export default function App() {
             <span className="corner tl" /><span className="corner tr" />
             <span className="corner bl" /><span className="corner br" />
             <div className="canvas-header">
-              <span>{activeDocument?.title ?? 'Loading manuscript'}</span>
+              <span>{activeDocument?.title ?? 'No document selected'}</span>
               <span className="right">
                 <span className={`pill ${pendingCount > 0 ? 'review' : ''}`}>
                   <span className="swatch" />
-                  {pendingCount > 0 ? `${pendingCount} pending edit${pendingCount === 1 ? '' : 's'}` : 'No pending edits'}
+                  {activeDocument ? (pendingCount > 0 ? `${pendingCount} pending edit${pendingCount === 1 ? '' : 's'}` : 'No pending edits') : 'No document'}
                 </span>
                 <span>{stats.words} words · {stats.chars} chars</span>
               </span>
             </div>
             <div className="editor-area">
-              <RichEditor
-                documentId={activeDocument?.id ?? null}
-                content={activeDocument?.content ?? null}
-                onEditorReady={setEditor}
-                onChange={scheduleDocumentSave}
-                onDropFiles={files => { void importFiles(files); }}
-                suggestions={localSuggestions}
-                focusedSuggestionId={focusedSuggestionId}
-                inlineDiffs={inlineDiffs}
-              />
+              {activeDocument ? (
+                <RichEditor
+                  documentId={activeDocument.id}
+                  content={activeDocument.content}
+                  onEditorReady={setEditor}
+                  onChange={scheduleDocumentSave}
+                  onDropFiles={files => { void importFiles(files); }}
+                  suggestions={localSuggestions}
+                  focusedSuggestionId={focusedSuggestionId}
+                  inlineDiffs={inlineDiffs}
+                />
+              ) : (
+                <div className="empty-canvas">
+                  <h2>No documents</h2>
+                  <p>Create a blank document or import a rich text file to begin.</p>
+                  <div>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={async () => {
+                        const doc = createBlankDocument();
+                        await upsertDocument(doc);
+                        setActiveDocumentId(doc.id);
+                      }}
+                    >
+                      New Document
+                    </button>
+                    <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
+                      Import File
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <div className="status-line">
@@ -452,6 +501,18 @@ export default function App() {
       <CustomPromptModal open={customOpen} onClose={() => setCustomOpen(false)} instructions={instructions} onSubmit={handleCustomInstruction} />
       <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} onExport={format => { void onExport(format); }} />
       <ConfirmModal open={confirmClear} onClose={() => setConfirmClear(false)} title="Clear the manuscript?" body="This empties the current document and discards pending edits. The document remains in your library." confirmLabel="Clear" danger onConfirm={clearDocument} />
+      <ConfirmModal
+        open={!!documentToDelete}
+        onClose={() => setDocumentToDelete(null)}
+        title="Delete this document?"
+        body={`This removes "${documentToDelete?.title ?? 'Untitled manuscript'}" from this browser. This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => {
+          if (documentToDelete) void deleteDocument(documentToDelete);
+          setDocumentToDelete(null);
+        }}
+      />
     </div>
   );
 }

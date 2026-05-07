@@ -1,7 +1,7 @@
 import React from 'react'
 import {
   Undo2, Redo2, FileCheck, FileX, CheckSquare, XSquare,
-  FileInput, FileOutput, Copy, Eraser, PanelLeftOpen, Settings2,
+  FileInput, FileOutput, Copy, Eraser, Settings2,
 } from 'lucide-react'
 
 interface ToolbarButtonProps {
@@ -42,10 +42,10 @@ export interface ToolbarProps {
   onExport: () => void
   onCopy: () => void
   onClear: () => void
-  onHistory: () => void
   onSettings: () => void
   busy: boolean
   hasText: boolean
+  hasDocument?: boolean
 }
 
 export function Toolbar({
@@ -53,8 +53,9 @@ export function Toolbar({
   onAcceptFocused, onRejectFocused, hasFocused,
   onAcceptAll, onRejectAll, pendingCount,
   onImport, onExport, onCopy, onClear,
-  onHistory, onSettings,
+  onSettings,
   busy, hasText,
+  hasDocument = true,
 }: ToolbarProps) {
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
   const cmd   = isMac ? '⌘' : 'Ctrl'
@@ -74,12 +75,11 @@ export function Toolbar({
       </div>
       <div className="tb-group">
         <ToolbarButton icon={<FileInput size={18} />} label="Import" onClick={onImport} />
-        <ToolbarButton icon={<FileOutput size={18} />} label="Export" onClick={onExport} disabled={!hasText} />
-        <ToolbarButton icon={<Copy size={18} />} label="Copy" onClick={onCopy} disabled={!hasText} />
-        <ToolbarButton icon={<Eraser size={18} />} label="Clear" onClick={onClear} disabled={!hasText} />
+        <ToolbarButton icon={<FileOutput size={18} />} label="Export" onClick={onExport} disabled={!hasDocument || !hasText} />
+        <ToolbarButton icon={<Copy size={18} />} label="Copy" onClick={onCopy} disabled={!hasDocument || !hasText} />
+        <ToolbarButton icon={<Eraser size={18} />} label="Clear" onClick={onClear} disabled={!hasDocument || !hasText} />
       </div>
       <div className="tb-group">
-        <ToolbarButton icon={<PanelLeftOpen size={18} />} label="Docs" onClick={onHistory} />
         <ToolbarButton icon={<Settings2 size={18} />} label="Settings" onClick={onSettings} />
       </div>
       <div className="spacer" />

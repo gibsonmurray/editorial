@@ -1,10 +1,9 @@
-import { useState } from 'react'
-import { PanelLeftOpen } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import type { ActionId, Stats } from '@/types'
 import type { RichDocument } from '@/types'
 import { DocumentLibrary } from './DocumentLibrary'
 
-type SidebarMode = 'documents' | 'marks'
+export type SidebarMode = 'documents' | 'marks'
 
 const ACTIONS = [
   { id: 'grammar',    name: 'Grammar',      glyph: '⁋', hint: 'Fix mistakes' },
@@ -24,14 +23,18 @@ export interface SidebarProps {
   busyAction: ActionId | null
   loading: boolean
   hasText: boolean
+  hasDocument: boolean
   hasKey: boolean
   stats: Stats
   documents: RichDocument[]
   activeDocumentId: string | null
+  mode: SidebarMode
   sidebarCollapsed: boolean
+  onModeChange: (mode: SidebarMode) => void
   onToggleSidebar: () => void
   onNewDocument: () => void
   onSelectDocument: (id: string) => void
+  onDeleteDocument: (id: string) => void
 }
 
 export function Sidebar({
@@ -39,17 +42,19 @@ export function Sidebar({
   busyAction,
   loading,
   hasText,
+  hasDocument,
   hasKey,
   stats,
   documents,
   activeDocumentId,
+  mode,
   sidebarCollapsed,
+  onModeChange,
   onToggleSidebar,
   onNewDocument,
   onSelectDocument,
+  onDeleteDocument,
 }: SidebarProps) {
-  const [mode, setMode] = useState<SidebarMode>('documents')
-
   if (sidebarCollapsed) {
     return (
       <aside className="sidebar collapsed">
@@ -69,12 +74,12 @@ export function Sidebar({
           <div className="meta">an editor in residence</div>
         </div>
         <button type="button" className="icon-btn sidebar-collapse-btn" onClick={onToggleSidebar} title="Hide sidebar">
-          <PanelLeftOpen size={17} />
+          <PanelLeftClose size={17} />
         </button>
       </div>
       <div className="sidebar-mode-tabs">
-        <button type="button" className={mode === 'documents' ? 'active' : ''} onClick={() => setMode('documents')}>Documents</button>
-        <button type="button" className={mode === 'marks' ? 'active' : ''} onClick={() => setMode('marks')}>Editor's Marks</button>
+        <button type="button" className={mode === 'documents' ? 'active' : ''} onClick={() => onModeChange('documents')}>Documents</button>
+        <button type="button" className={mode === 'marks' ? 'active' : ''} onClick={() => onModeChange('marks')}>Editor's Marks</button>
       </div>
       {mode === 'documents' ? (
         <DocumentLibrary
@@ -85,10 +90,11 @@ export function Sidebar({
           toggleTitle="Hide sidebar"
           onNew={onNewDocument}
           onSelect={onSelectDocument}
+          onDelete={onDeleteDocument}
         />
-      ) : null}
-      <div className="sidebar-scroll">
-        {mode === 'marks' && <div className="section">
+      ) : (
+        <div className="sidebar-scroll">
+          <div className="section">
           <div className="section-head">
             <span className="title">Editor's Marks</span>
           </div>
@@ -99,7 +105,7 @@ export function Sidebar({
                 <button
                   key={a.id}
                   className={'action ' + (isActive ? 'active' : '')}
-                  disabled={loading || (!hasText && a.id !== 'custom') || !hasKey}
+                  disabled={loading || !hasDocument || (!hasText && a.id !== 'custom') || !hasKey}
                   onClick={() => onAction(a.id as ActionId)}
                   title={a.hint}
                   aria-busy={isActive || undefined}
@@ -119,8 +125,9 @@ export function Sidebar({
               ※ Open Settings to add your API key. Keys live only in this browser.
             </div>
           )}
-        </div>}
-      </div>
+          </div>
+        </div>
+      )}
       <div className="statbar">
         <div className="stat"><span className="num">{stats.words}</span><span className="lbl">words</span></div>
         <div className="sep" />
