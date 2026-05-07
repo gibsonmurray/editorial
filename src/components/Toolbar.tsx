@@ -69,6 +69,7 @@ export interface ToolbarProps {
     onClear: () => void
     onSettings: () => void
     busy: boolean
+    streamingEditCount?: number | null
     hasText: boolean
     hasDocument?: boolean
 }
@@ -91,6 +92,7 @@ export function Toolbar({
     onClear,
     onSettings,
     busy,
+    streamingEditCount,
     hasText,
     hasDocument = true,
 }: ToolbarProps) {
@@ -195,7 +197,9 @@ export function Toolbar({
                 <span className="dot" />
                 <span className="text">
                     {busy
-                        ? "Consulting editor…"
+                        ? streamingEditCount != null && streamingEditCount > 0
+                            ? `Found ${streamingEditCount} edit${streamingEditCount === 1 ? "" : "s"}…`
+                            : "Consulting editor…"
                         : pendingCount > 0
                           ? `${pendingCount} pending`
                           : hasText

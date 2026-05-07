@@ -8,8 +8,8 @@ import {
     PanelRightOpen,
 } from "lucide-react"
 import {
-    callAI,
-    parseEditsResponse,
+    streamAI,
+    extractEditsFromBuffer,
     ACTION_INSTRUCTIONS,
     SYSTEM_TEMPLATE,
     synthesizeInstructionName,
@@ -31,6 +31,7 @@ import {
 } from "./import-export"
 import type {
     ActionId,
+    EditOp,
     EditSuggestion,
     ProviderId,
     RichDocument,
@@ -183,6 +184,10 @@ export default function App() {
         SuggestionTag | "all"
     >("all")
     const [busyAction, setBusyAction] = useState<ActionId | null>(null)
+    const [streamingEditCount, setStreamingEditCount] = useState<number | null>(
+        null,
+    )
+    const stableSuggestionIds = useRef<string[]>([])
     const [error, setError] = useState<string | null>(null)
     const [customOpen, setCustomOpen] = useState(false)
     const [settingsOpen, setSettingsOpen] = useState(false)
@@ -384,33 +389,68 @@ export default function App() {
             if (!instruction) return
 
             setBusyAction(actionId)
+            stableSuggestionIds.current = []
+            const accEdits: EditOp[] = []
+            let bufferCursor = 0
+            let rawBuffer = ""
+            let firstSuggestionFocused = false
+
             try {
-                const raw = await callAI({
+                await streamAI({
                     provider,
                     model,
                     apiKey,
                     baseURL,
                     systemPrompt: SYSTEM_TEMPLATE(instruction),
                     userText: source,
+                    onChunk: (text) => {
+                        rawBuffer += text
+                        const { ops, cursor } = extractEditsFromBuffer(
+                            rawBuffer,
+                            bufferCursor,
+                        )
+                        if (ops.length === 0) return
+                        bufferCursor = cursor
+                        accEdits.push(...ops)
+                        const fresh = suggestionsFromEdits(editor, accEdits)
+                        const merged = fresh.map((s, i) => ({
+                            ...s,
+                            id: stableSuggestionIds.current[i] ?? s.id,
+                        }))
+                        stableSuggestionIds.current = merged.map((s) => s.id)
+                        setLocalSuggestions(merged)
+                        setStreamingEditCount(accEdits.length)
+                        if (!firstSuggestionFocused && merged[0]) {
+                            firstSuggestionFocused = true
+                            setFocusedSuggestionId(merged[0].id)
+                            focusSuggestion(editor, merged[0])
+                        }
+                    },
                 })
-                const { edits, rawError } = parseEditsResponse(raw)
-                if (rawError && edits.length === 0) {
+
+                const finalSuggestions = suggestionsFromEdits(editor, accEdits)
+                const merged = finalSuggestions.map((s, i) => ({
+                    ...s,
+                    id: stableSuggestionIds.current[i] ?? s.id,
+                }))
+                if (merged.length === 0 && accEdits.length === 0) {
+                    // nothing came through — rawBuffer has the full response for error reporting
                     setError(
-                        `Could not parse editor response.\n\n${rawError}\n\nRaw output:\n${raw.slice(0, 600)}`,
+                        `Could not parse editor response.\n\nRaw output:\n${rawBuffer.slice(0, 600)}`,
                     )
                     return
                 }
-                const nextSuggestions = suggestionsFromEdits(editor, edits)
-                setLocalSuggestions(nextSuggestions)
-                setFocusedSuggestionId(nextSuggestions[0]?.id ?? null)
+                setLocalSuggestions(merged)
+                if (!firstSuggestionFocused) {
+                    setFocusedSuggestionId(merged[0]?.id ?? null)
+                    if (merged[0]) focusSuggestion(editor, merged[0])
+                }
                 await upsertDocument({
                     ...activeDocument,
                     content: editor.getJSON(),
                     html: editor.getHTML(),
-                    suggestions: nextSuggestions,
+                    suggestions: merged,
                 })
-                if (nextSuggestions[0])
-                    focusSuggestion(editor, nextSuggestions[0])
 
                 if (
                     apiKey &&
@@ -421,13 +461,15 @@ export default function App() {
                     void generateDocumentTitle(
                         activeDocument.id,
                         source,
-                        nextSuggestions,
+                        merged,
                     )
                 }
             } catch (e) {
-                setError((e as Error).message || String(e))
+                if ((e as Error).name !== "AbortError")
+                    setError((e as Error).message || String(e))
             } finally {
                 setBusyAction(null)
+                setStreamingEditCount(null)
             }
         },
         [
@@ -735,6 +777,7 @@ export default function App() {
                     onClear={() => setConfirmClear(true)}
                     onSettings={() => setSettingsOpen(true)}
                     busy={!!busyAction}
+                    streamingEditCount={streamingEditCount}
                     hasText={hasText}
                     hasDocument={hasDocument}
                 />
