@@ -834,6 +834,24 @@
     text-transform: uppercase;
     color: var(--color-ink-faint);
 }
+.title-label {
+    cursor: text;
+}
+.title-label:hover {
+    color: var(--color-ink-soft);
+}
+.title-edit {
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--color-rule);
+    outline: none;
+    font: inherit;
+    color: var(--color-ink);
+    letter-spacing: inherit;
+    text-transform: inherit;
+    flex: 1;
+    padding: 0 16px 0 0;
+}
 .canvas-header .right {
     display: flex;
     gap: 16px;

@@ -153,6 +153,28 @@ export async function synthesizeInstructionName(
     return (parsed.name ?? "").trim().slice(0, 48)
 }
 
+export async function synthesizeDocumentTitle(
+    options: Omit<CallAIOptions, "systemPrompt" | "userText"> & {
+        text: string
+    },
+): Promise<string> {
+    const raw = await callAI({
+        ...options,
+        systemPrompt:
+            'Give this document a short title. Return ONLY JSON like {"title":"Short Title"}. Use 2 to 6 words, title case, no punctuation.',
+        userText: options.text.slice(0, 600),
+    })
+    const s = raw
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/```\s*$/i, "")
+    const first = s.indexOf("{")
+    const last = s.lastIndexOf("}")
+    const json = first >= 0 && last >= 0 ? s.slice(first, last + 1) : s
+    const parsed = JSON.parse(json) as { title?: string }
+    return (parsed.title ?? "").trim().slice(0, 80)
+}
+
 export interface ParseEditsResult {
     edits: EditOp[]
     rawError?: string
