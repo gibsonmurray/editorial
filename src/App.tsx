@@ -483,6 +483,28 @@ export default function App() {
         ],
     )
 
+    const handleCompoundAction = useCallback(
+        async (ids: ActionId[]) => {
+            if (ids.length === 0) return
+            if (ids.length === 1) {
+                await runAction(ids[0])
+                return
+            }
+            const numbered = ids
+                .map(
+                    (id, i) =>
+                        `${i + 1}. ${ACTION_INSTRUCTIONS[id as Exclude<ActionId, "custom">]}`,
+                )
+                .join("\n\n")
+            const combined =
+                `Apply ALL of the following editorial goals in a single unified pass. ` +
+                `Address every goal simultaneously with the same set of targeted edits:\n\n` +
+                numbered
+            await runAction("custom", combined)
+        },
+        [runAction],
+    )
+
     const handleCustomInstruction = async (
         instruction: string,
         existingId?: string,
@@ -728,6 +750,7 @@ export default function App() {
 
             <Sidebar
                 onAction={handleAction}
+                onCompoundAction={handleCompoundAction}
                 busyAction={busyAction}
                 loading={!!busyAction}
                 hasText={hasText}
