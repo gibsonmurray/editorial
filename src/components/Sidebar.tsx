@@ -1,3 +1,4 @@
+import { useState } from "react"
 import {
     ALargeSmall,
     CheckCheck,
@@ -59,6 +60,7 @@ const ACTIONS = [
 
 export interface SidebarProps {
     onAction: (id: ActionId) => void
+    onCompoundAction: (ids: ActionId[]) => void
     busyAction: ActionId | null
     loading: boolean
     hasText: boolean
@@ -78,6 +80,7 @@ export interface SidebarProps {
 
 export function Sidebar({
     onAction,
+    onCompoundAction,
     busyAction,
     loading,
     hasText,
@@ -94,6 +97,18 @@ export function Sidebar({
     onSelectDocument,
     onDeleteDocument,
 }: SidebarProps) {
+    const [compoundIds, setCompoundIds] = useState<Set<ActionId>>(new Set())
+
+    const toggleCompound = (id: ActionId) => {
+        setCompoundIds((prev) => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    const clearCompound = () => setCompoundIds(new Set())
     if (sidebarCollapsed) {
         return (
             <aside className="sidebar collapsed">
@@ -165,44 +180,104 @@ export function Sidebar({
                         <div className="actions">
                             {ACTIONS.map((a) => {
                                 const isActive = busyAction === a.id
+                                const isArmed = compoundIds.has(
+                                    a.id as ActionId,
+                                )
+                                const canCompound = a.id !== "custom"
                                 const Icon = a.Icon
+                                const disabled =
+                                    loading ||
+                                    !hasDocument ||
+                                    (!hasText && a.id !== "custom") ||
+                                    !hasKey
                                 return (
-                                    <button
-                                        key={a.id}
-                                        className={
-                                            "action " +
-                                            (isActive ? "active" : "")
-                                        }
-                                        disabled={
-                                            loading ||
-                                            !hasDocument ||
-                                            (!hasText && a.id !== "custom") ||
-                                            !hasKey
-                                        }
-                                        onClick={() =>
-                                            onAction(a.id as ActionId)
-                                        }
-                                        title={a.hint}
-                                        aria-busy={isActive || undefined}
-                                    >
-                                        <span className="glyph">
-                                            <Icon size={17} strokeWidth={1.9} />
-                                        </span>
-                                        <span className="label">
-                                            <span className="name">
-                                                {a.name}
+                                    <div className="action-row" key={a.id}>
+                                        <button
+                                            className={[
+                                                "action",
+                                                isActive ? "active" : "",
+                                                isArmed ? "armed" : "",
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
+                                            disabled={disabled}
+                                            onClick={() =>
+                                                onAction(a.id as ActionId)
+                                            }
+                                            title={a.hint}
+                                            aria-busy={isActive || undefined}
+                                        >
+                                            <span className="glyph">
+                                                <Icon
+                                                    size={17}
+                                                    strokeWidth={1.9}
+                                                />
                                             </span>
-                                            <span className="hint">
-                                                {a.hint}
+                                            <span className="label">
+                                                <span className="name">
+                                                    {a.name}
+                                                </span>
+                                                <span className="hint">
+                                                    {a.hint}
+                                                </span>
                                             </span>
-                                        </span>
-                                        {isActive && (
-                                            <span className="spinner" />
+                                            {isActive && (
+                                                <span className="spinner" />
+                                            )}
+                                        </button>
+                                        {canCompound && (
+                                            <label
+                                                className="action-check"
+                                                title={
+                                                    isArmed
+                                                        ? "Remove from compound pass"
+                                                        : "Add to compound pass"
+                                                }
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isArmed}
+                                                    disabled={disabled}
+                                                    onChange={() =>
+                                                        toggleCompound(
+                                                            a.id as ActionId,
+                                                        )
+                                                    }
+                                                />
+                                            </label>
                                         )}
-                                    </button>
+                                    </div>
                                 )
                             })}
                         </div>
+                        {compoundIds.size >= 2 && (
+                            <div className="compound-cta">
+                                <button
+                                    className="compound-run"
+                                    disabled={
+                                        loading ||
+                                        !hasDocument ||
+                                        !hasText ||
+                                        !hasKey
+                                    }
+                                    onClick={() => {
+                                        onCompoundAction(
+                                            Array.from(compoundIds),
+                                        )
+                                        clearCompound()
+                                    }}
+                                >
+                                    Run {compoundIds.size} passes →
+                                </button>
+                                <button
+                                    className="compound-clear"
+                                    onClick={clearCompound}
+                                    title="Clear selection"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        )}
                         {!hasKey && (
                             <div
                                 style={{
