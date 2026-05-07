@@ -5,7 +5,7 @@ dist/
 
 # dotenv environment variables
 .env.local
-.env.*.local
+.env.*
 
 # Logs
 npm-debug.log*
