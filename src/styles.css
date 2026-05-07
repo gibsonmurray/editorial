@@ -1,9 +1,5 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
-
-@custom-variant dark (&:is(.dark *));
 
 @theme {
   --color-paper: #F4EFE6;
@@ -31,31 +27,7 @@
 }
 
 @layer base {
-  /* shadcn/ui CSS variables mapped to editorial palette */
-  :root {
-    --background: var(--color-paper);
-    --foreground: var(--color-ink);
-    --card: var(--color-paper);
-    --card-foreground: var(--color-ink);
-    --popover: var(--color-paper);
-    --popover-foreground: var(--color-ink);
-    --primary: var(--color-ink-button);
-    --primary-foreground: var(--color-paper);
-    --secondary: var(--color-paper-deep);
-    --secondary-foreground: var(--color-ink);
-    --muted: var(--color-paper-deep);
-    --muted-foreground: var(--color-ink-faint);
-    --accent: var(--color-paper-deep);
-    --accent-foreground: var(--color-ink);
-    --destructive: var(--color-crimson);
-    --destructive-foreground: var(--color-paper);
-    --border: var(--color-rule);
-    --input: var(--color-rule);
-    --ring: var(--color-ink-button);
-  }
-
-  * { box-sizing: border-box;
-    @apply border-border outline-ring/50; }
+  * { box-sizing: border-box; }
 
   html, body, #root {
     margin: 0;
@@ -70,10 +42,7 @@
     text-rendering: optimizeLegibility;
   }
 
-  button { font-family: inherit; }
-  body {
-    @apply bg-background text-foreground;
-  }
+  button, input, select, textarea { font-family: inherit; }
 }
 
 /* Paper grain */
@@ -121,8 +90,6 @@
 .sidebar-scroll {
   flex: 1; min-height: 0; overflow-y: auto; padding: 18px 24px 20px;
 }
-.sidebar-scroll::-webkit-scrollbar { width: 8px; }
-.sidebar-scroll::-webkit-scrollbar-thumb { background: var(--color-rule); border-radius: 4px; }
 
 .section { margin-bottom: 22px; }
 .section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
@@ -197,7 +164,6 @@
   border-bottom: 1px solid var(--color-rule); background: var(--color-paper-deep);
   flex-wrap: nowrap; overflow-x: auto;
 }
-.toolbar::-webkit-scrollbar { display: none; }
 
 .tb-group {
   display: flex; align-items: stretch; gap: 2px; padding: 0 6px; position: relative;
@@ -278,8 +244,6 @@
 .canvas-header .pill.review .swatch { background: var(--color-forest); }
 
 .editor-area { flex: 1; min-height: 0; overflow-y: auto; position: relative; }
-.editor-area::-webkit-scrollbar { width: 10px; }
-.editor-area::-webkit-scrollbar-thumb { background: var(--color-rule); border-radius: 6px; }
 
 .write-textarea {
   width: 100%; height: 100%; min-height: 100%; padding: 32px 64px 80px;
@@ -413,6 +377,7 @@
 .history-row {
   display: flex; align-items: center; gap: 12px; padding: 10px 12px;
   border: 1px solid var(--color-rule); background: var(--color-paper-deep);
+  width: 100%; color: var(--color-ink); text-align: left;
   cursor: pointer; transition: background 0.12s, border-color 0.12s;
 }
 .history-row:hover { background: var(--color-paper); border-color: var(--color-ink-soft); }
@@ -431,438 +396,8 @@
 }
 .alert .x { margin-left: auto; background: transparent; border: 0; cursor: pointer; color: var(--color-crimson); font-size: 14px; }
 
-@theme inline {
-  --font-heading: var(--font-display);
-  --font-sans: 'IBM Plex Mono', ui-monospace, monospace;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-}
-
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
-
-/* The Vite port renders the OG modal markup through Base UI/shadcn slots.
-   These scoped rules reapply the reference Editorial modal design. */
-:root {
-  --background: var(--color-paper);
-  --foreground: var(--color-ink);
-  --card: var(--color-paper);
-  --card-foreground: var(--color-ink);
-  --popover: var(--color-paper);
-  --popover-foreground: var(--color-ink);
-  --primary: var(--color-ink-button);
-  --primary-foreground: var(--color-paper);
-  --secondary: var(--color-paper);
-  --secondary-foreground: var(--color-ink);
-  --muted: var(--color-paper);
-  --muted-foreground: var(--color-ink-faint);
-  --accent: var(--color-paper-deep);
-  --accent-foreground: var(--color-ink);
-  --destructive: var(--color-crimson);
-  --border: var(--color-rule);
-  --input: var(--color-rule);
-  --ring: var(--color-ink-button);
-  --radius: 0rem;
-}
-
-[data-slot="dialog-overlay"] {
-  z-index: 100;
-  background: rgba(28, 25, 23, 0.45);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-[data-slot="dialog-content"] {
-  z-index: 101;
-  width: min(560px, calc(100vw - 48px));
-  max-width: min(560px, calc(100vw - 48px));
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  overflow: hidden;
-  padding: 0;
-  color: var(--color-ink);
-  background: var(--color-paper);
-  border: 1px solid var(--color-rule);
-  border-radius: 0;
-  box-shadow: 0 20px 60px -20px rgba(28, 25, 23, 0.5);
-  outline: none;
-  --tw-ring-shadow: 0 0 #0000;
-}
-
-[data-slot="dialog-content"]::before,
-[data-slot="dialog-content"]::after {
-  content: "";
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  height: 1px;
-  background: var(--color-rule-soft);
-}
-
-[data-slot="dialog-content"]::before { top: 8px; }
-[data-slot="dialog-content"]::after { bottom: 8px; }
-
-[data-slot="dialog-header"] {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 22px 28px 14px;
-  border-bottom: 1px solid var(--color-rule-soft);
-}
-
-[data-slot="dialog-description"] {
-  margin: 0 0 6px;
-  color: var(--color-ink-faint);
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 400;
-  line-height: 1.55;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
-
-[data-slot="dialog-title"] {
-  color: var(--color-ink);
-  font-family: 'Cormorant Garamond', Garamond, serif;
-  font-size: 30px;
-  font-style: italic;
-  font-weight: 500;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
-}
-
-[data-slot="dialog-content"] > :not([data-slot="dialog-header"]):not([data-slot="dialog-footer"]) {
-  margin-right: 28px;
-  margin-left: 28px;
-}
-
-[data-slot="dialog-header"] + :not([data-slot="dialog-footer"]) {
-  margin-top: 18px;
-}
-
-[data-slot="dialog-content"] > :not([data-slot="dialog-header"]):not([data-slot="dialog-footer"]):has(+ [data-slot="dialog-footer"]) {
-  margin-bottom: 8px;
-}
-
-[data-slot="dialog-footer"] {
-  display: flex;
-  flex-direction: row;
-  justify-content: flex-end;
-  gap: 10px;
-  margin: 0;
-  margin-top: 8px;
-  padding: 14px 28px 22px;
-  background: transparent;
-  border-top: 1px solid var(--color-rule-soft);
-  border-radius: 0;
-}
-
-[data-slot="dialog-content"] .field {
-  margin-bottom: 12px;
-}
-
-[data-slot="dialog-content"] .field-label {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--color-ink-faint);
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 400;
-  line-height: 1.55;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-[data-slot="dialog-content"] .input-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-[data-slot="dialog-content"] [data-slot="input"],
-[data-slot="dialog-content"] [data-slot="select-trigger"],
-[data-slot="dialog-content"] textarea {
-  width: 100%;
-  min-width: 0;
-  height: auto;
-  min-height: 37px;
-  padding: 9px 11px;
-  color: var(--color-ink);
-  background: var(--color-paper-deep);
-  border: 1px solid var(--color-rule);
-  border-radius: 0;
-  box-shadow: none;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.35;
-  outline: none;
-}
-
-[data-slot="dialog-content"] [data-slot="input"]:focus,
-[data-slot="dialog-content"] [data-slot="select-trigger"]:focus,
-[data-slot="dialog-content"] textarea:focus {
-  border-color: var(--color-ink-button);
-  box-shadow: 0 0 0 3px rgba(41, 37, 36, 0.08);
-}
-
-[data-slot="dialog-content"] [data-slot="input"]::placeholder,
-[data-slot="dialog-content"] textarea::placeholder {
-  color: var(--color-ink-faint);
-  opacity: 0.7;
-}
-
-[data-slot="dialog-content"] [data-slot="select-trigger"] {
-  justify-content: space-between;
-  gap: 8px;
-  padding-right: 10px;
-  white-space: nowrap;
-}
-
-[data-slot="dialog-content"] [data-slot="select-value"] {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  overflow: hidden;
-  text-align: left;
-}
-
-[data-slot="select-content"] {
-  color: var(--color-ink);
-  background: var(--color-paper);
-  border: 1px solid var(--color-rule);
-  border-radius: 0;
-  box-shadow: 0 12px 30px -20px rgba(28, 25, 23, 0.45);
-  --tw-ring-shadow: 0 0 #0000;
-}
-
-[data-slot="select-positioner"] {
-  z-index: 102;
-}
-
-[data-slot="select-item"] {
-  border-radius: 0;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 13px;
-}
-
-[data-slot="dialog-content"] .key-row {
-  position: relative;
-}
-
-[data-slot="dialog-content"] .key-row .reveal {
-  position: absolute;
-  top: 50%;
-  right: 8px;
-  display: flex;
-  padding: 4px;
-  color: var(--color-ink-faint);
-  background: transparent;
-  border: 0;
-  transform: translateY(-50%);
-  cursor: pointer;
-}
-
-[data-slot="dialog-content"] .key-row .reveal:hover {
-  color: var(--color-ink);
-}
-
-[data-slot="dialog-content"] [data-slot="button"] {
-  height: auto;
-  min-height: 34px;
-  padding: 9px 16px;
-  color: var(--color-ink);
-  background: var(--color-paper);
-  border: 1px solid var(--color-rule);
-  border-radius: 0;
-  box-shadow: none;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.35;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-[data-slot="dialog-content"] [data-slot="button"]:hover:not(:disabled) {
-  background: var(--color-paper-deep);
-  border-color: var(--color-ink-soft);
-}
-
-[data-slot="dialog-content"] [data-slot="button"][data-variant="default"] {
-  color: var(--color-paper);
-  background: var(--color-ink-button);
-  border-color: var(--color-ink-button);
-}
-
-[data-slot="dialog-content"] [data-slot="button"][data-variant="default"]:hover:not(:disabled) {
-  background: var(--color-ink);
-}
-
-[data-slot="dialog-content"] [data-slot="button"][data-variant="destructive"] {
-  color: var(--color-crimson);
-  background: var(--color-paper);
-  border-color: var(--color-crimson);
-}
-
-[data-slot="dialog-content"] [data-slot="button"][data-variant="destructive"]:hover:not(:disabled) {
-  background: var(--color-crimson-bg);
-}
-
-[data-slot="dialog-content"] [data-slot="button"]:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-[data-slot="dialog-content"] [data-slot="textarea"] {
-  display: block;
-  min-height: 120px;
-  max-width: 100%;
-  field-sizing: fixed;
-  overflow-wrap: break-word;
-  white-space: pre-wrap;
-  resize: vertical;
-}
-
-[data-slot="dialog-content"] [data-slot="textarea"]:focus-visible {
-  border-color: var(--color-ink-button);
-  box-shadow: 0 0 0 3px rgba(41, 37, 36, 0.08);
-}
-
-[data-slot="dialog-content"] .history-empty {
-  margin-top: 0;
-  margin-bottom: 0;
-  padding: 30px;
-  color: var(--color-ink-faint);
-  font-size: 15px;
-  font-style: italic;
-  line-height: 1.5;
-  text-align: center;
-}
-
 @media (max-width: 640px) {
-  [data-slot="dialog-content"] {
-    width: calc(100vw - 32px);
-    max-width: calc(100vw - 32px);
-  }
-
-  [data-slot="dialog-header"],
-  [data-slot="dialog-footer"] {
-    padding-right: 20px;
-    padding-left: 20px;
-  }
-
-  [data-slot="dialog-content"] > :not([data-slot="dialog-header"]):not([data-slot="dialog-footer"]) {
-    margin-right: 20px;
-    margin-left: 20px;
-  }
-
-  [data-slot="dialog-content"] .input-row {
-    grid-template-columns: 1fr;
-  }
+  .modal { width: calc(100vw - 32px); }
+  .modal-head, .modal-body, .modal-foot { padding-right: 20px; padding-left: 20px; }
+  .input-row { grid-template-columns: 1fr; }
 }

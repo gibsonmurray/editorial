@@ -1,12 +1,4 @@
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogFooter,
-    DialogTitle,
-    DialogDescription,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
+import { Modal } from "./Modal"
 
 export interface ConfirmModalProps {
     open: boolean
@@ -28,38 +20,38 @@ export function ConfirmModal({
     onClose,
 }: ConfirmModalProps) {
     return (
-        <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogDescription>Editorial</DialogDescription>
-                    <DialogTitle>{title}</DialogTitle>
-                </DialogHeader>
-
-                <div
-                    style={{
-                        fontSize: 13,
-                        color: "var(--color-ink-soft)",
-                        lineHeight: 1.6,
-                    }}
-                >
-                    {body}
-                </div>
-
-                <DialogFooter>
-                    <Button variant="secondary" onClick={onClose}>
+        <Modal
+            open={open}
+            onClose={onClose}
+            kicker="Editorial"
+            title={title}
+            footer={
+                <>
+                    <button className="btn" type="button" onClick={onClose}>
                         Cancel
-                    </Button>
-                    <Button
-                        variant={danger ? "destructive" : "default"}
+                    </button>
+                    <button
+                        className={"btn " + (danger ? "danger" : "primary")}
+                        type="button"
                         onClick={() => {
                             onConfirm()
                             onClose()
                         }}
                     >
                         {confirmLabel}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                    </button>
+                </>
+            }
+        >
+            <div
+                style={{
+                    fontSize: 13,
+                    color: "var(--color-ink-soft)",
+                    lineHeight: 1.6,
+                }}
+            >
+                {body}
+            </div>
+        </Modal>
     )
 }
