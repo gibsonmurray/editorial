@@ -3,6 +3,7 @@ name: Release
 on:
     push:
         branches: [main]
+    workflow_dispatch: # allow manual runs from GitHub UI / CLI
 
 # Cancel any in-flight release run for the same branch
 concurrency:
