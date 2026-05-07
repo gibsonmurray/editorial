@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Editor, JSONContent } from '@tiptap/react';
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { callAI, parseEditsResponse, ACTION_INSTRUCTIONS, SYSTEM_TEMPLATE, synthesizeInstructionName } from './ai-client';
 import { createBlankDocument, db, touchInstruction, upsertDocument } from './db';
 import {
@@ -54,6 +55,20 @@ function usePersistedState<T>(key: string, initial: T): [T, React.Dispatch<React
     } catch {}
   }, [key, v]);
   return [v, setV];
+}
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, [query]);
+
+  return matches;
 }
 
 function fallbackInstructionName(instruction: string) {
@@ -110,6 +125,9 @@ export default function App() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<RichDocument | null>(null);
   const [copied, setCopied] = useState(false);
+  const compactLayout = useMediaQuery('(max-width: 900px)');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileSuggestionsOpen, setMobileSuggestionsOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | null>(null);
@@ -142,6 +160,15 @@ export default function App() {
   const pendingCount = localSuggestions.filter(s => s.status === 'pending').length;
   const hasText = !!currentText.trim();
   const hasDocument = !!activeDocument;
+  const effectiveSidebarCollapsed = compactLayout ? !mobileSidebarOpen : sidebarCollapsed;
+  const effectiveSuggestionsCollapsed = compactLayout ? !mobileSuggestionsOpen : suggestionsCollapsed;
+
+  useEffect(() => {
+    if (!compactLayout) {
+      setMobileSidebarOpen(false);
+      setMobileSuggestionsOpen(false);
+    }
+  }, [compactLayout]);
 
   const persistActiveDocument = useCallback((patch: Partial<RichDocument>) => {
     if (!activeDocument) return;
@@ -355,11 +382,50 @@ export default function App() {
   };
 
   const activeSuggestion = focusedSuggestionId ? localSuggestions.find(s => s.id === focusedSuggestionId && s.status === 'pending') : null;
+  const toggleSidebar = () => {
+    if (compactLayout) setMobileSidebarOpen(open => !open);
+    else setSidebarCollapsed(v => !v);
+  };
+  const toggleSuggestions = () => {
+    if (compactLayout) setMobileSuggestionsOpen(open => !open);
+    else setSuggestionsCollapsed(v => !v);
+  };
 
   return (
-    <div className={'app' + (suggestionsCollapsed ? ' suggestions-collapsed' : '') + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
+    <div className={'app' + (effectiveSuggestionsCollapsed ? ' suggestions-collapsed' : '') + (effectiveSidebarCollapsed ? ' sidebar-collapsed' : '')}>
       <div className="paper-grain coarse" />
       <div className="paper-grain" />
+
+      <div className="mobile-topbar">
+        <button
+          type="button"
+          className={'mobile-topbar-btn' + (mobileSidebarOpen ? ' active' : '')}
+          onClick={() => {
+            setMobileSidebarOpen(open => !open);
+            setMobileSuggestionsOpen(false);
+          }}
+          title={mobileSidebarOpen ? 'Hide documents' : 'Show documents'}
+          aria-label={mobileSidebarOpen ? 'Hide documents' : 'Show documents'}
+          aria-expanded={mobileSidebarOpen}
+        >
+          {mobileSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+        </button>
+        <span className="mobile-topbar-title">Editorial</span>
+        <button
+          type="button"
+          className={'mobile-topbar-btn review' + (mobileSuggestionsOpen ? ' active' : '')}
+          onClick={() => {
+            setMobileSuggestionsOpen(open => !open);
+            setMobileSidebarOpen(false);
+          }}
+          title={mobileSuggestionsOpen ? 'Hide suggestions' : 'Show suggestions'}
+          aria-label={mobileSuggestionsOpen ? 'Hide suggestions' : 'Show suggestions'}
+          aria-expanded={mobileSuggestionsOpen}
+        >
+          {mobileSuggestionsOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+          <span>{pendingCount}</span>
+        </button>
+      </div>
 
       <Sidebar
         onAction={handleAction}
@@ -372,9 +438,9 @@ export default function App() {
         documents={documents}
         activeDocumentId={activeDocument?.id ?? null}
         mode={sidebarMode}
-        sidebarCollapsed={sidebarCollapsed}
+        sidebarCollapsed={effectiveSidebarCollapsed}
         onModeChange={setSidebarMode}
-        onToggleSidebar={() => setSidebarCollapsed(v => !v)}
+        onToggleSidebar={toggleSidebar}
         onNewDocument={async () => {
           const doc = createBlankDocument();
           await upsertDocument(doc);
@@ -474,10 +540,10 @@ export default function App() {
         suggestions={localSuggestions}
         focusedId={focusedSuggestionId}
         filter={suggestionFilter}
-        collapsed={suggestionsCollapsed}
+        collapsed={effectiveSuggestionsCollapsed}
         inlineDiffs={inlineDiffs}
         onFilter={setSuggestionFilter}
-        onToggleCollapsed={() => setSuggestionsCollapsed(v => !v)}
+        onToggleCollapsed={toggleSuggestions}
         onInlineDiffsChange={setInlineDiffs}
         onFocus={focusSidecarSuggestion}
         onAccept={acceptSuggestion}

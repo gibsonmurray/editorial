@@ -1,4 +1,18 @@
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import {
+  ALargeSmall,
+  CheckCheck,
+  ListCollapse,
+  Paintbrush,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PenLine,
+  RefreshCw,
+  Scissors,
+  Sparkles,
+  SpellCheck,
+  WandSparkles,
+  type LucideIcon,
+} from 'lucide-react'
 import type { ActionId, Stats } from '@/types'
 import type { RichDocument } from '@/types'
 import { DocumentLibrary } from './DocumentLibrary'
@@ -6,17 +20,17 @@ import { DocumentLibrary } from './DocumentLibrary'
 export type SidebarMode = 'documents' | 'marks'
 
 const ACTIONS = [
-  { id: 'grammar',    name: 'Grammar',      glyph: '⁋', hint: 'Fix mistakes' },
-  { id: 'light',      name: 'Light',        glyph: '·', hint: 'Touch-ups only' },
-  { id: 'proofread',  name: 'Proofread',    glyph: '✓', hint: 'Full proofread' },
-  { id: 'natural',    name: 'Natural',      glyph: '∼', hint: 'More human' },
-  { id: 'streamline', name: 'Streamline',   glyph: '⇉', hint: 'Smooth flow' },
-  { id: 'improve',    name: 'Improve',      glyph: '✦', hint: 'Strengthen prose' },
-  { id: 'rewrite',    name: 'Rewrite',      glyph: '↻', hint: 'Heavier rework' },
-  { id: 'formal',     name: 'Formal',       glyph: '§', hint: 'Elevate tone' },
-  { id: 'concise',    name: 'Concise',      glyph: '↤', hint: 'Cut filler' },
-  { id: 'custom',     name: 'Custom Prompt', glyph: '+', hint: 'Your instruction' },
-] as const
+  { id: 'grammar',    name: 'Grammar',       Icon: SpellCheck,    hint: 'Fix mistakes' },
+  { id: 'light',      name: 'Light',         Icon: Paintbrush,    hint: 'Touch-ups only' },
+  { id: 'proofread',  name: 'Proofread',     Icon: CheckCheck,    hint: 'Full proofread' },
+  { id: 'natural',    name: 'Natural',       Icon: Sparkles,      hint: 'More human' },
+  { id: 'streamline', name: 'Streamline',    Icon: ListCollapse,  hint: 'Smooth flow' },
+  { id: 'improve',    name: 'Improve',       Icon: WandSparkles,  hint: 'Strengthen prose' },
+  { id: 'rewrite',    name: 'Rewrite',       Icon: RefreshCw,     hint: 'Heavier rework' },
+  { id: 'formal',     name: 'Formal',        Icon: ALargeSmall,   hint: 'Elevate tone' },
+  { id: 'concise',    name: 'Concise',       Icon: Scissors,      hint: 'Cut filler' },
+  { id: 'custom',     name: 'Custom Prompt', Icon: PenLine,       hint: 'Your instruction' },
+] satisfies readonly { id: ActionId; name: string; Icon: LucideIcon; hint: string }[]
 
 export interface SidebarProps {
   onAction: (id: ActionId) => void
@@ -101,6 +115,7 @@ export function Sidebar({
           <div className="actions">
             {ACTIONS.map(a => {
               const isActive = busyAction === a.id
+              const Icon = a.Icon
               return (
                 <button
                   key={a.id}
@@ -110,7 +125,7 @@ export function Sidebar({
                   title={a.hint}
                   aria-busy={isActive || undefined}
                 >
-                  <span className="glyph">{a.glyph}</span>
+                  <span className="glyph"><Icon size={17} strokeWidth={1.9} /></span>
                   <span className="label">
                     <span className="name">{a.name}</span>
                     <span className="hint">{a.hint}</span>
