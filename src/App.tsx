@@ -13,6 +13,7 @@ import {
     ACTION_INSTRUCTIONS,
     SYSTEM_TEMPLATE,
     synthesizeInstructionName,
+    synthesizeDocumentTitle,
 } from "./ai-client"
 import { createBlankDocument, db, touchInstruction, upsertDocument } from "./db"
 import {
@@ -190,12 +191,15 @@ export default function App() {
     const [documentToDelete, setDocumentToDelete] =
         useState<RichDocument | null>(null)
     const [copied, setCopied] = useState(false)
+    const [titleEditing, setTitleEditing] = useState(false)
+    const [titleDraft, setTitleDraft] = useState("")
     const compactLayout = useMediaQuery("(max-width: 900px)")
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
     const [mobileSuggestionsOpen, setMobileSuggestionsOpen] = useState(false)
 
     const fileInputRef = useRef<HTMLInputElement>(null)
     const saveTimer = useRef<number | null>(null)
+    const titleGenInitiated = useRef(new Set<string>())
 
     const activeDocument = useMemo(
         () => documents.find((doc) => doc.id === activeDocumentId) ?? null,
@@ -286,22 +290,33 @@ export default function App() {
         localSuggestions,
     ])
 
+    const generateDocumentTitle = useCallback(
+        async (docId: string, text: string, suggestions: EditSuggestion[]) => {
+            try {
+                const title = await synthesizeDocumentTitle({
+                    provider,
+                    model,
+                    apiKey,
+                    baseURL,
+                    text,
+                })
+                if (!title) return
+                const latest = await db.documents.get(docId)
+                if (!latest || latest.title !== "Untitled manuscript") return
+                void upsertDocument({ ...latest, title, suggestions })
+            } catch {}
+        },
+        [apiKey, baseURL, model, provider],
+    )
+
     const scheduleDocumentSave = useCallback(
         (content: JSONContent, html: string, text: string) => {
             setEditorText(text)
             if (!activeDocument) return
             if (saveTimer.current) window.clearTimeout(saveTimer.current)
             saveTimer.current = window.setTimeout(() => {
-                const firstLine = text.trim().split(/\n/)[0]?.slice(0, 80)
-                const title =
-                    (!activeDocument.title ||
-                        activeDocument.title === "Untitled manuscript") &&
-                    firstLine
-                        ? firstLine
-                        : activeDocument.title
                 void upsertDocument({
                     ...activeDocument,
-                    title,
                     content,
                     html,
                     suggestions: localSuggestions,
@@ -396,13 +411,34 @@ export default function App() {
                 })
                 if (nextSuggestions[0])
                     focusSuggestion(editor, nextSuggestions[0])
+
+                if (
+                    apiKey &&
+                    activeDocument.title === "Untitled manuscript" &&
+                    !titleGenInitiated.current.has(activeDocument.id)
+                ) {
+                    titleGenInitiated.current.add(activeDocument.id)
+                    void generateDocumentTitle(
+                        activeDocument.id,
+                        source,
+                        nextSuggestions,
+                    )
+                }
             } catch (e) {
                 setError((e as Error).message || String(e))
             } finally {
                 setBusyAction(null)
             }
         },
-        [activeDocument, apiKey, baseURL, editor, model, provider],
+        [
+            activeDocument,
+            apiKey,
+            baseURL,
+            editor,
+            generateDocumentTitle,
+            model,
+            provider,
+        ],
     )
 
     const handleCustomInstruction = async (
@@ -717,10 +753,50 @@ export default function App() {
                         <span className="corner bl" />
                         <span className="corner br" />
                         <div className="canvas-header">
-                            <span>
-                                {activeDocument?.title ??
-                                    "No document selected"}
-                            </span>
+                            {activeDocument && titleEditing ? (
+                                <input
+                                    className="title-edit"
+                                    autoFocus
+                                    value={titleDraft}
+                                    onChange={(e) =>
+                                        setTitleDraft(e.target.value)
+                                    }
+                                    onBlur={() => {
+                                        setTitleEditing(false)
+                                        const next = titleDraft.trim()
+                                        if (
+                                            next &&
+                                            next !== activeDocument.title
+                                        )
+                                            void upsertDocument({
+                                                ...activeDocument,
+                                                title: next,
+                                            })
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter")
+                                            e.currentTarget.blur()
+                                        if (e.key === "Escape") {
+                                            setTitleDraft(activeDocument.title)
+                                            setTitleEditing(false)
+                                        }
+                                    }}
+                                />
+                            ) : (
+                                <span
+                                    className={
+                                        activeDocument ? "title-label" : ""
+                                    }
+                                    onClick={() => {
+                                        if (!activeDocument) return
+                                        setTitleDraft(activeDocument.title)
+                                        setTitleEditing(true)
+                                    }}
+                                >
+                                    {activeDocument?.title ??
+                                        "No document selected"}
+                                </span>
+                            )}
                             <span className="right">
                                 <span
                                     className={`pill ${pendingCount > 0 ? "review" : ""}`}
