@@ -37,3 +37,4 @@ coverage/
 logs/
 *.log
 .claude/
+.vercel
