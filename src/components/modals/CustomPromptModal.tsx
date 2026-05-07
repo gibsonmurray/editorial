@@ -44,7 +44,7 @@ export function CustomPromptModal({
         >
             {instructions.length > 0 && (
                 <div className="saved-instructions">
-                    {instructions.map(item => (
+                    {instructions.map((item) => (
                         <button
                             key={item.id}
                             type="button"

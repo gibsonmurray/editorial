@@ -60,7 +60,9 @@ export function SettingsModal({
                             setSettings({
                                 ...settings,
                                 provider: p,
-                                model: found ? found.defaultModel : settings.model,
+                                model: found
+                                    ? found.defaultModel
+                                    : settings.model,
                             })
                         }}
                     >
