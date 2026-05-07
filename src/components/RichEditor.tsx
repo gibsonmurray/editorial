@@ -15,6 +15,7 @@ interface RichEditorProps {
     onEditorReady: (editor: Editor | null) => void
     onChange: (content: JSONContent, html: string, text: string) => void
     onDropFiles: (files: File[]) => void
+    onSuggestionClick?: (id: string) => void
     suggestions: EditSuggestion[]
     focusedSuggestionId: string | null
     inlineDiffs: boolean
@@ -26,6 +27,7 @@ export function RichEditor({
     onEditorReady,
     onChange,
     onDropFiles,
+    onSuggestionClick,
     suggestions,
     focusedSuggestionId,
     inlineDiffs,
@@ -84,5 +86,17 @@ export function RichEditor({
         )
     }, [editor, focusedSuggestionId, inlineDiffs, suggestions])
 
-    return <EditorContent editor={editor} className="rich-editor" />
+    const handleClick = (e: React.MouseEvent) => {
+        if (!onSuggestionClick) return
+        const el = (e.target as HTMLElement).closest<HTMLElement>(
+            "[data-suggestion-id]",
+        )
+        if (el?.dataset.suggestionId) onSuggestionClick(el.dataset.suggestionId)
+    }
+
+    return (
+        <div onClick={handleClick}>
+            <EditorContent editor={editor} className="rich-editor" />
+        </div>
+    )
 }

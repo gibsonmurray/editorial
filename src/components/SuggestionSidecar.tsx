@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import {
     Check,
     X,
@@ -35,6 +36,16 @@ export function SuggestionSidecar({
     onAccept,
     onReject,
 }: SuggestionSidecarProps) {
+    const listRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        if (!focusedId || !listRef.current) return
+        const card = listRef.current.querySelector<HTMLElement>(
+            `[data-suggestion-id="${focusedId}"]`,
+        )
+        card?.scrollIntoView({ block: "nearest" })
+    }, [focusedId])
+
     const pending = suggestions.filter((s) => s.status === "pending")
     const tags = Array.from(new Set(pending.map((s) => s.tag)))
     const visible =
@@ -118,7 +129,7 @@ export function SuggestionSidecar({
                 </small>
             </label>
 
-            <div className="suggestion-list">
+            <div className="suggestion-list" ref={listRef}>
                 {visible.length === 0 ? (
                     <div className="suggestion-empty">
                         No pending suggestions.
@@ -128,6 +139,7 @@ export function SuggestionSidecar({
                         <button
                             type="button"
                             key={s.id}
+                            data-suggestion-id={s.id}
                             className={
                                 "suggestion-card" +
                                 (focusedId === s.id ? " focused" : "")

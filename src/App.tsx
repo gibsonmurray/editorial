@@ -747,6 +747,11 @@ export default function App() {
                                     onDropFiles={(files) => {
                                         void importFiles(files)
                                     }}
+                                    onSuggestionClick={
+                                        !effectiveSuggestionsCollapsed
+                                            ? focusSidecarSuggestion
+                                            : undefined
+                                    }
                                     suggestions={localSuggestions}
                                     focusedSuggestionId={focusedSuggestionId}
                                     inlineDiffs={inlineDiffs}
