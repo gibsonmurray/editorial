@@ -40,6 +40,15 @@
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  html {
+    min-height: 100%;
+  }
+
+  body {
+    min-height: 100%;
   }
 
   button, input, select, textarea { font-family: inherit; }
@@ -65,7 +74,14 @@
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 340px;
   height: 100vh;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  background: var(--color-paper);
   z-index: 1;
+  overflow: hidden;
 }
 .app.suggestions-collapsed { grid-template-columns: 300px minmax(0, 1fr) 52px; }
 .app.sidebar-collapsed { grid-template-columns: 52px minmax(0, 1fr) 340px; }
@@ -482,6 +498,13 @@
   font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-ink-faint);
   display: flex; justify-content: space-between; pointer-events: none;
 }
+.status-line span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-line span + span { text-align: right; }
 
 /* ─── Suggestion sidecar ─────────────────────────── */
 .suggestion-sidecar {
@@ -741,12 +764,53 @@
   .canvas-frame { margin: 12px; }
   .rich-editor-body { padding: 26px 24px 76px; }
   .canvas-header { padding-left: 18px; padding-right: 18px; gap: 12px; flex-wrap: wrap; }
+  .status-line { display: none; }
   .modal { width: calc(100vw - 32px); }
   .modal-head, .modal-body, .modal-foot { padding-right: 20px; padding-left: 20px; }
   .input-row { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 1180px) {
+@media (min-width: 641px) and (max-width: 1180px) {
   .app { grid-template-columns: 280px minmax(0, 1fr); }
   .suggestion-sidecar { display: none; }
+}
+
+@media (display-mode: standalone), (display-mode: window-controls-overlay) {
+  .app {
+    background: var(--color-paper-deep);
+  }
+}
+
+@media (display-mode: window-controls-overlay) {
+  .app {
+    padding-top: max(env(safe-area-inset-top), env(titlebar-area-height, 0px));
+  }
+
+  .app::before {
+    content: '';
+    position: fixed;
+    top: env(titlebar-area-y, 0px);
+    left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100vw);
+    height: env(titlebar-area-height, 0px);
+    min-height: env(titlebar-area-height, 0px);
+    background: var(--color-paper-deep);
+    border-bottom: 1px solid var(--color-rule-soft);
+    -webkit-app-region: drag;
+    app-region: drag;
+    z-index: 20;
+  }
+
+  .sidebar,
+  .pane,
+  .suggestion-sidecar,
+  .modal,
+  button,
+  input,
+  select,
+  textarea,
+  [role='button'] {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
 }
