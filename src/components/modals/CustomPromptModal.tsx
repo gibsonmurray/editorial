@@ -1,15 +1,18 @@
 import { useState } from "react"
 import { Modal } from "./Modal"
+import type { SavedInstruction } from "@/types"
 
 export interface CustomPromptModalProps {
     open: boolean
     onClose: () => void
-    onSubmit: (instruction: string) => void
+    instructions: SavedInstruction[]
+    onSubmit: (instruction: string, existingId?: string) => void
 }
 
 export function CustomPromptModal({
     open,
     onClose,
+    instructions,
     onSubmit,
 }: CustomPromptModalProps) {
     const [v, setV] = useState("")
@@ -39,6 +42,24 @@ export function CustomPromptModal({
                 </>
             }
         >
+            {instructions.length > 0 && (
+                <div className="saved-instructions">
+                    {instructions.map(item => (
+                        <button
+                            key={item.id}
+                            type="button"
+                            className="saved-instruction"
+                            onClick={() => {
+                                onSubmit(item.instruction, item.id)
+                                setV("")
+                            }}
+                        >
+                            <span>{item.name}</span>
+                            <small>{item.instruction}</small>
+                        </button>
+                    ))}
+                </div>
+            )}
             <textarea
                 autoFocus
                 value={v}

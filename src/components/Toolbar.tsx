@@ -1,7 +1,7 @@
 import React from 'react'
 import {
   Undo2, Redo2, FileCheck, FileX, CheckSquare, XSquare,
-  FileInput, FileOutput, Copy, Eraser, History, Settings2,
+  FileInput, FileOutput, Copy, Eraser, PanelLeftOpen, Settings2,
 } from 'lucide-react'
 
 interface ToolbarButtonProps {
@@ -79,7 +79,7 @@ export function Toolbar({
         <ToolbarButton icon={<Eraser size={18} />} label="Clear" onClick={onClear} disabled={!hasText} />
       </div>
       <div className="tb-group">
-        <ToolbarButton icon={<History size={18} />} label="History" onClick={onHistory} />
+        <ToolbarButton icon={<PanelLeftOpen size={18} />} label="Docs" onClick={onHistory} />
         <ToolbarButton icon={<Settings2 size={18} />} label="Settings" onClick={onSettings} />
       </div>
       <div className="spacer" />

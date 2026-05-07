@@ -20,14 +20,15 @@ export const SYSTEM_TEMPLATE = (instruction: string): string =>
 Return ONLY a JSON object (no markdown, no explanation, no code fences) in this exact shape:
 {
   "edits": [
-    { "type": "delete", "original": "text to remove" },
-    { "type": "insert", "after": "anchor text", "text": "text to add" },
-    { "type": "replace", "original": "old text", "replacement": "new text" }
+    { "type": "delete", "original": "text to remove", "tag": "deletion" },
+    { "type": "insert", "after": "anchor text", "text": "text to add", "tag": "insertion" },
+    { "type": "replace", "original": "old text", "replacement": "new text", "tag": "grammar" }
   ]
 }
 
 Rules:
 - "original" and "after" must be EXACT substrings of the user's text (preserve casing and whitespace).
+- Every edit must include one tag: grammar, punctuation, clarity, style, tone, concision, insertion, or deletion.
 - Make small, targeted edits rather than one giant replace covering the whole text.
 - Each edit operates on a distinct piece of text. Do not overlap edits.
 - If no changes are needed, return {"edits": []}.
@@ -105,6 +106,20 @@ export async function callAI({ provider, model, apiKey, baseURL, systemPrompt, u
   }
   const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
   return data?.choices?.[0]?.message?.content ?? '';
+}
+
+export async function synthesizeInstructionName(options: Omit<CallAIOptions, 'systemPrompt' | 'userText'> & { instruction: string }): Promise<string> {
+  const raw = await callAI({
+    ...options,
+    systemPrompt: 'Name this editing instruction. Return ONLY JSON like {"name":"Short Name"}. Use 2 to 5 words, title case, no punctuation.',
+    userText: options.instruction,
+  });
+  const s = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
+  const first = s.indexOf('{');
+  const last = s.lastIndexOf('}');
+  const json = first >= 0 && last >= 0 ? s.slice(first, last + 1) : s;
+  const parsed = JSON.parse(json) as { name?: string };
+  return (parsed.name ?? '').trim().slice(0, 48);
 }
 
 export interface ParseEditsResult {

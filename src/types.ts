@@ -1,3 +1,5 @@
+import type { JSONContent } from '@tiptap/react';
+
 export type SegmentStatus = 'pending' | 'accepted' | 'rejected';
 
 export interface KeepSegment {
@@ -18,12 +20,23 @@ export type Segment = KeepSegment | EditSegment;
 
 export type EditType = 'delete' | 'replace' | 'insert';
 
+export type SuggestionTag =
+  | 'grammar'
+  | 'punctuation'
+  | 'clarity'
+  | 'style'
+  | 'tone'
+  | 'concision'
+  | 'insertion'
+  | 'deletion';
+
 export interface EditOp {
   type: EditType;
   original?: string;
   replacement?: string;
   after?: string;
   text?: string;
+  tag?: SuggestionTag;
 }
 
 export type ProviderId = 'anthropic' | 'openai' | 'google' | 'mistral' | 'groq' | 'openrouter';
@@ -70,4 +83,38 @@ export interface Stats {
 export interface Snapshot {
   text: string;
   segments: Segment[];
+}
+
+export interface SuggestionRange {
+  from: number;
+  to: number;
+}
+
+export interface EditSuggestion {
+  id: string;
+  type: EditType;
+  before: string;
+  after: string;
+  tag: SuggestionTag;
+  status: SegmentStatus;
+  range: SuggestionRange;
+}
+
+export interface RichDocument {
+  id: string;
+  title: string;
+  content: JSONContent;
+  html: string;
+  suggestions: EditSuggestion[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SavedInstruction {
+  id: string;
+  name: string;
+  instruction: string;
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt?: number;
 }
