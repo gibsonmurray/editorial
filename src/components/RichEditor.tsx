@@ -6,14 +6,23 @@ import {
     type JSONContent,
 } from "@tiptap/react"
 import { editorExtensions } from "@/editor/extensions"
-import { updateSuggestionDecorations } from "@/editor/suggestionDecorations"
+import {
+    getEditorSuggestions,
+    installSuggestionAnnotations,
+    updateSuggestionDecorations,
+} from "@/editor/suggestionDecorations"
 import type { EditSuggestion } from "@/types"
 
 interface RichEditorProps {
     documentId: string | null
     content: JSONContent | null
     onEditorReady: (editor: Editor | null) => void
-    onChange: (content: JSONContent, html: string, text: string) => void
+    onChange: (
+        content: JSONContent,
+        html: string,
+        text: string,
+        suggestions: EditSuggestion[],
+    ) => void
     onDropFiles: (files: File[]) => void
     onSuggestionClick?: (id: string) => void
     suggestions: EditSuggestion[]
@@ -42,6 +51,7 @@ export function RichEditor({
                 current.getJSON(),
                 current.getHTML(),
                 current.getText({ blockSeparator: "\n\n" }),
+                getEditorSuggestions(current),
             )
         },
         editorProps: {
@@ -78,13 +88,15 @@ export function RichEditor({
 
     useEffect(() => {
         if (!editor) return
-        updateSuggestionDecorations(
-            editor,
-            suggestions,
-            focusedSuggestionId,
-            inlineDiffs,
-        )
-    }, [editor, focusedSuggestionId, inlineDiffs, suggestions])
+        if (!sameSuggestionList(getEditorSuggestions(editor), suggestions)) {
+            installSuggestionAnnotations(editor, suggestions)
+        }
+    }, [documentId, editor, suggestions])
+
+    useEffect(() => {
+        if (!editor) return
+        updateSuggestionDecorations(editor, focusedSuggestionId, inlineDiffs)
+    }, [editor, focusedSuggestionId, inlineDiffs])
 
     const handleClick = (e: React.MouseEvent) => {
         if (!onSuggestionClick) return
@@ -99,4 +111,22 @@ export function RichEditor({
             <EditorContent editor={editor} className="rich-editor" />
         </div>
     )
+}
+
+function sameSuggestionList(a: EditSuggestion[], b: EditSuggestion[]) {
+    const pendingA = a.filter((item) => item.status === "pending")
+    const pendingB = b.filter((item) => item.status === "pending")
+    if (pendingA.length !== pendingB.length) return false
+    return pendingA.every((item, index) => {
+        const other = pendingB[index]
+        return (
+            item.id === other.id &&
+            item.type === other.type &&
+            item.before === other.before &&
+            item.after === other.after &&
+            item.tag === other.tag &&
+            item.range.from === other.range.from &&
+            item.range.to === other.range.to
+        )
+    })
 }

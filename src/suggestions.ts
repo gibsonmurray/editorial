@@ -99,14 +99,6 @@ function resolvePoint(map: TextMap, offset: number) {
     return null
 }
 
-function plainOffsetAtPosition(map: TextMap, position: number) {
-    for (let i = 0; i < map.positions.length; i += 1) {
-        const pos = map.positions[i]
-        if (pos != null && pos >= position) return i
-    }
-    return map.text.length
-}
-
 function normalizeTag(op: EditOp): SuggestionTag {
     if (op.tag && op.tag in TAG_META) return op.tag
     return DEFAULT_TAG_BY_TYPE[op.type] ?? "style"
@@ -238,6 +230,7 @@ export function suggestionsFromEdits(
                 start = cursor
                 end = cursor
             }
+            if (map.text.slice(start, start + after.length) === after) return
         }
 
         if (start < 0) return
@@ -264,7 +257,9 @@ function sameSuggestionState(a: EditSuggestion, b: EditSuggestion) {
         a.status === b.status &&
         a.range.from === b.range.from &&
         a.range.to === b.range.to &&
-        a.type === b.type
+        a.type === b.type &&
+        a.before === b.before &&
+        a.after === b.after
     )
 }
 
@@ -278,106 +273,51 @@ export function suggestionsNeedSync(
     )
 }
 
-export function syncSuggestionsWithDocument(
-    editor: Editor,
-    suggestions: EditSuggestion[],
-): EditSuggestion[] {
-    if (!suggestions.length) return suggestions
-
-    const map = plainTextWithPositions(editor)
-    let cursor = 0
-
-    return suggestions.map((suggestion) => {
-        if (suggestion.type === "insert" && suggestion.after) {
-            const offset = plainOffsetAtPosition(map, suggestion.range.from)
-            const insertedEnd = offset + suggestion.after.length
-            const isAccepted =
-                map.text.slice(offset, insertedEnd) === suggestion.after
-            const range = resolveRange(
-                map,
-                offset,
-                isAccepted ? insertedEnd : offset,
-            )
-            return {
-                ...suggestion,
-                status: isAccepted
-                    ? ("accepted" as const)
-                    : suggestion.status === "rejected"
-                      ? ("rejected" as const)
-                      : ("pending" as const),
-                range: range ?? suggestion.range,
-            }
-        }
-
-        const beforeIndex = suggestion.before
-            ? map.text.indexOf(suggestion.before, cursor)
-            : -1
-        const afterIndex = suggestion.after
-            ? map.text.indexOf(suggestion.after, cursor)
-            : -1
-
-        let nextStatus = suggestion.status
-        let matchStart = -1
-        let matchEnd = -1
-
-        if (
-            suggestion.before &&
-            beforeIndex !== -1 &&
-            (afterIndex === -1 || beforeIndex <= afterIndex)
-        ) {
-            nextStatus =
-                suggestion.status === "rejected" ? "rejected" : "pending"
-            matchStart = beforeIndex
-            matchEnd = beforeIndex + suggestion.before.length
-        } else if (suggestion.after && afterIndex !== -1) {
-            nextStatus = "accepted"
-            matchStart = afterIndex
-            matchEnd = afterIndex + suggestion.after.length
-        } else if (
-            suggestion.type === "delete" &&
-            suggestion.before &&
-            beforeIndex === -1
-        ) {
-            nextStatus = "accepted"
-        } else if (
-            suggestion.type === "insert" &&
-            suggestion.after &&
-            afterIndex === -1
-        ) {
-            nextStatus =
-                suggestion.status === "rejected" ? "rejected" : "pending"
-        }
-
-        if (matchStart === -1) return { ...suggestion, status: nextStatus }
-
-        const range = resolveRange(map, matchStart, matchEnd)
-        cursor = Math.max(cursor, matchEnd)
-        return range
-            ? { ...suggestion, status: nextStatus, range }
-            : { ...suggestion, status: nextStatus }
-    })
-}
-
 export function applySuggestion(editor: Editor, suggestion: EditSuggestion) {
     if (suggestion.type === "delete") {
         editor.chain().focus().deleteRange(suggestion.range).run()
         return
     }
 
+    editor.commands.focus()
     if (suggestion.type === "insert") {
-        editor
-            .chain()
-            .focus()
-            .insertContentAt(suggestion.range.from, suggestion.after)
-            .run()
+        editor.view.dispatch(
+            editor.state.tr
+                .insertText(suggestion.after ?? "", suggestion.range.from)
+                .scrollIntoView(),
+        )
         return
     }
 
-    editor
-        .chain()
-        .focus()
-        .insertContentAt(suggestion.range, suggestion.after)
-        .run()
+    editor.view.dispatch(
+        editor.state.tr
+            .insertText(
+                suggestion.after ?? "",
+                suggestion.range.from,
+                suggestion.range.to,
+            )
+            .scrollIntoView(),
+    )
+}
+
+export function rejectSuggestionChange(
+    editor: Editor,
+    suggestion: EditSuggestion,
+) {
+    editor.commands.focus()
+
+    if (suggestion.type === "insert") {
+        editor.chain().deleteRange(suggestion.range).run()
+        return
+    }
+
+    const markType = editor.state.schema.marks.suggestion
+    if (!markType) return
+    editor.view.dispatch(
+        editor.state.tr
+            .removeMark(suggestion.range.from, suggestion.range.to, markType)
+            .scrollIntoView(),
+    )
 }
 
 export function focusSuggestion(editor: Editor, suggestion: EditSuggestion) {

@@ -39,6 +39,7 @@ Rules:
 - For replacements, make "original" and "replacement" the smallest changed span only. Do not include unchanged words around the edit.
 - Make small, targeted edits rather than one giant replace covering the whole text.
 - Each edit operates on a distinct piece of text. Do not overlap edits.
+- Do not replace curly/smart quotes or apostrophes (‘’””) with straight ones (‘”). You may correct a curly quote that is the wrong direction (e.g. ‘ used where ‘ is correct).
 - If no changes are needed, return {"edits": []}.
 
 Apply this rule: ${instruction}`

@@ -20,9 +20,9 @@ import {
     applySuggestion,
     focusSuggestion,
     plainTextWithPositions,
+    rejectSuggestionChange,
     suggestionsFromEdits,
     suggestionsNeedSync,
-    syncSuggestionsWithDocument,
 } from "./suggestions"
 import {
     exportDocument,
@@ -43,6 +43,7 @@ import type {
 import { Toolbar } from "@/components/Toolbar"
 import { Sidebar, type SidebarMode } from "@/components/Sidebar"
 import { RichEditor } from "@/components/RichEditor"
+import { getEditorSuggestions } from "@/editor/suggestionDecorations"
 import { SuggestionSidecar } from "@/components/SuggestionSidecar"
 import { ErrorAlert } from "@/components/ErrorAlert"
 import { SettingsModal } from "@/components/modals/SettingsModal"
@@ -108,28 +109,6 @@ function wordsAndChars(text: string): Stats {
         words: (text.trim().match(/\S+/g) ?? []).length,
         chars: text.length,
     }
-}
-
-function adjustRanges(suggestions: EditSuggestion[], applied: EditSuggestion) {
-    const delta =
-        applied.type === "delete"
-            ? -applied.before.length
-            : applied.type === "insert"
-              ? applied.after.length
-              : applied.after.length - applied.before.length
-
-    if (delta === 0) return suggestions
-    return suggestions.map((item) => {
-        if (item.id === applied.id || item.range.from <= applied.range.from)
-            return item
-        return {
-            ...item,
-            range: {
-                from: Math.max(1, item.range.from + delta),
-                to: Math.max(1, item.range.to + delta),
-            },
-        }
-    })
 }
 
 export default function App() {
@@ -205,6 +184,7 @@ export default function App() {
     const fileInputRef = useRef<HTMLInputElement>(null)
     const saveTimer = useRef<number | null>(null)
     const titleGenInitiated = useRef(new Set<string>())
+    const abortControllerRef = useRef<AbortController | null>(null)
 
     const activeDocument = useMemo(
         () => documents.find((doc) => doc.id === activeDocumentId) ?? null,
@@ -269,32 +249,6 @@ export default function App() {
         [activeDocument, localSuggestions],
     )
 
-    useEffect(() => {
-        if (!editor || !activeDocument || !localSuggestions.length) return
-        const synced = syncSuggestionsWithDocument(editor, localSuggestions)
-        if (!suggestionsNeedSync(localSuggestions, synced)) return
-        setLocalSuggestions(synced)
-        const nextFocused =
-            synced.find(
-                (s) => s.id === focusedSuggestionId && s.status === "pending",
-            ) ??
-            synced.find((s) => s.status === "pending") ??
-            null
-        setFocusedSuggestionId(nextFocused?.id ?? null)
-        void upsertDocument({
-            ...activeDocument,
-            content: editor.getJSON(),
-            html: editor.getHTML(),
-            suggestions: synced,
-        })
-    }, [
-        activeDocument,
-        editor,
-        editorText,
-        focusedSuggestionId,
-        localSuggestions,
-    ])
-
     const generateDocumentTitle = useCallback(
         async (docId: string, text: string, suggestions: EditSuggestion[]) => {
             try {
@@ -315,8 +269,18 @@ export default function App() {
     )
 
     const scheduleDocumentSave = useCallback(
-        (content: JSONContent, html: string, text: string) => {
+        (
+            content: JSONContent,
+            html: string,
+            text: string,
+            suggestions: EditSuggestion[],
+        ) => {
             setEditorText(text)
+            setLocalSuggestions((current) =>
+                suggestionsNeedSync(current, suggestions)
+                    ? suggestions
+                    : current,
+            )
             if (!activeDocument) return
             if (saveTimer.current) window.clearTimeout(saveTimer.current)
             saveTimer.current = window.setTimeout(() => {
@@ -324,11 +288,11 @@ export default function App() {
                     ...activeDocument,
                     content,
                     html,
-                    suggestions: localSuggestions,
+                    suggestions,
                 })
             }, 300)
         },
-        [activeDocument, localSuggestions],
+        [activeDocument],
     )
 
     const createDocumentFromHtml = useCallback(
@@ -394,6 +358,8 @@ export default function App() {
             let bufferCursor = 0
             let rawBuffer = ""
             let firstSuggestionFocused = false
+            const abortController = new AbortController()
+            abortControllerRef.current = abortController
 
             try {
                 await streamAI({
@@ -403,6 +369,7 @@ export default function App() {
                     baseURL,
                     systemPrompt: SYSTEM_TEMPLATE(instruction),
                     userText: source,
+                    signal: abortController.signal,
                     onChunk: (text) => {
                         rawBuffer += text
                         const { ops, cursor } = extractEditsFromBuffer(
@@ -419,7 +386,7 @@ export default function App() {
                         }))
                         stableSuggestionIds.current = merged.map((s) => s.id)
                         setLocalSuggestions(merged)
-                        setStreamingEditCount(accEdits.length)
+                        setStreamingEditCount(merged.length)
                         if (!firstSuggestionFocused && merged[0]) {
                             firstSuggestionFocused = true
                             setFocusedSuggestionId(merged[0].id)
@@ -470,6 +437,7 @@ export default function App() {
             } finally {
                 setBusyAction(null)
                 setStreamingEditCount(null)
+                abortControllerRef.current = null
             }
         },
         [
@@ -553,28 +521,30 @@ export default function App() {
 
     const acceptSuggestion = (id: string) => {
         if (!editor) return
-        const suggestion = localSuggestions.find(
+        const suggestion = getEditorSuggestions(editor).find(
             (s) => s.id === id && s.status === "pending",
         )
         if (!suggestion) return
         applySuggestion(editor, suggestion)
-        const next = adjustRanges(localSuggestions, suggestion).map((s) =>
-            s.id === id ? { ...s, status: "accepted" as const } : s,
-        )
-        updateSuggestions(next)
+        const next = getEditorSuggestions(editor)
         const nextPending = next.find((s) => s.status === "pending")
+        updateSuggestions(next)
         setFocusedSuggestionId(nextPending?.id ?? null)
         if (nextPending) focusSuggestion(editor, nextPending)
     }
 
     const rejectSuggestion = (id: string) => {
-        const next = localSuggestions.map((s) =>
-            s.id === id ? { ...s, status: "rejected" as const } : s,
+        if (!editor) return
+        const suggestion = getEditorSuggestions(editor).find(
+            (s) => s.id === id && s.status === "pending",
         )
-        updateSuggestions(next)
+        if (!suggestion) return
+        rejectSuggestionChange(editor, suggestion)
+        const next = getEditorSuggestions(editor)
         const nextPending = next.find((s) => s.status === "pending")
+        updateSuggestions(next)
         setFocusedSuggestionId(nextPending?.id ?? null)
-        if (editor && nextPending) focusSuggestion(editor, nextPending)
+        if (nextPending) focusSuggestion(editor, nextPending)
     }
 
     const focusSidecarSuggestion = (id: string) => {
@@ -585,28 +555,25 @@ export default function App() {
 
     const acceptAll = () => {
         if (!editor) return
-        const pending = [...localSuggestions]
+        const pending = [...getEditorSuggestions(editor)]
             .filter((s) => s.status === "pending")
             .sort((a, b) => b.range.from - a.range.from)
         pending.forEach((suggestion) => applySuggestion(editor, suggestion))
-        updateSuggestions(
-            localSuggestions.map((s) =>
-                s.status === "pending"
-                    ? { ...s, status: "accepted" as const }
-                    : s,
-            ),
-        )
+        const next = getEditorSuggestions(editor)
+        updateSuggestions(next)
         setFocusedSuggestionId(null)
     }
 
     const rejectAll = () => {
-        updateSuggestions(
-            localSuggestions.map((s) =>
-                s.status === "pending"
-                    ? { ...s, status: "rejected" as const }
-                    : s,
-            ),
+        if (!editor) return
+        const pending = [...getEditorSuggestions(editor)]
+            .filter((s) => s.status === "pending")
+            .sort((a, b) => b.range.from - a.range.from)
+        pending.forEach((suggestion) =>
+            rejectSuggestionChange(editor, suggestion),
         )
+        const next = getEditorSuggestions(editor)
+        updateSuggestions(next)
         setFocusedSuggestionId(null)
     }
 
@@ -800,6 +767,7 @@ export default function App() {
                     onClear={() => setConfirmClear(true)}
                     onSettings={() => setSettingsOpen(true)}
                     busy={!!busyAction}
+                    onCancel={() => abortControllerRef.current?.abort()}
                     streamingEditCount={streamingEditCount}
                     hasText={hasText}
                     hasDocument={hasDocument}

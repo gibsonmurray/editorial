@@ -12,6 +12,7 @@ import {
     Check,
     Eraser,
     Settings2,
+    X,
 } from "lucide-react"
 
 interface ToolbarButtonProps {
@@ -69,6 +70,7 @@ export interface ToolbarProps {
     onClear: () => void
     onSettings: () => void
     busy: boolean
+    onCancel: () => void
     streamingEditCount?: number | null
     hasText: boolean
     hasDocument?: boolean
@@ -92,6 +94,7 @@ export function Toolbar({
     onClear,
     onSettings,
     busy,
+    onCancel,
     streamingEditCount,
     hasText,
     hasDocument = true,
@@ -206,6 +209,16 @@ export function Toolbar({
                             ? "Ready"
                             : "Empty"}
                 </span>
+                {busy && (
+                    <button
+                        className="tb-cancel"
+                        onClick={onCancel}
+                        title="Cancel"
+                        aria-label="Cancel"
+                    >
+                        <X size={12} />
+                    </button>
+                )}
             </div>
         </div>
     )

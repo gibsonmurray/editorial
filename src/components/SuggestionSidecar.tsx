@@ -46,7 +46,9 @@ export function SuggestionSidecar({
         card?.scrollIntoView({ block: "nearest" })
     }, [focusedId])
 
-    const pending = suggestions.filter((s) => s.status === "pending")
+    const pending = suggestions
+        .filter((s) => s.status === "pending")
+        .sort((a, b) => a.range.from - b.range.from)
     const tags = Array.from(new Set(pending.map((s) => s.tag)))
     const visible =
         filter === "all" ? pending : pending.filter((s) => s.tag === filter)

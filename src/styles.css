@@ -555,6 +555,14 @@
     padding-right: 32px;
     width: 100%;
 }
+.action-row .action .spinner {
+    right: auto;
+    left: 16px;
+    top: calc(50% - 6px);
+}
+.action-row .action.active .glyph svg {
+    display: none;
+}
 .action-check {
     position: absolute;
     right: 10px;
@@ -867,6 +875,23 @@
 .tb-status.has-edits .dot {
     background: var(--color-forest);
 }
+.tb-cancel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    background: none;
+    cursor: pointer;
+    opacity: 0.5;
+    padding: 0;
+    flex-shrink: 0;
+}
+.tb-cancel:hover {
+    opacity: 1;
+}
 @keyframes pulse {
     0%,
     100% {
@@ -1109,6 +1134,13 @@
     padding: 1px 2px;
     margin-left: 2px;
     border-radius: 2px;
+}
+.pm-suggestion-marker {
+    display: inline-block;
+    width: 0;
+    max-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
 }
 .pm-suggestion-selected {
     box-shadow: 0 0 0 1px currentColor;
