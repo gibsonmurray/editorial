@@ -39,7 +39,7 @@ Rules:
 - For replacements, make "original" and "replacement" the smallest changed span only. Do not include unchanged words around the edit.
 - Make small, targeted edits rather than one giant replace covering the whole text.
 - Each edit operates on a distinct piece of text. Do not overlap edits.
-- Do not replace curly/smart quotes or apostrophes (‘’””) with straight ones (‘”). You may correct a curly quote that is the wrong direction (e.g. ‘ used where ‘ is correct).
+- Do not replace curly/smart quotes or apostrophes (‘’“”) with straight ones ('"). You may correct a curly quote that is the wrong direction (e.g. ‘ used where ’ is correct).
 - If no changes are needed, return {"edits": []}.
 
 Apply this rule: ${instruction}`
@@ -52,10 +52,29 @@ export interface CallAIOptions {
     systemPrompt: string
     userText: string
     signal?: AbortSignal
+    temperature?: number
 }
 
 export interface StreamAIOptions extends CallAIOptions {
     onChunk: (text: string) => void
+}
+
+const PROVIDER_BASE: Partial<Record<ProviderId, string>> = {
+    openai: "https://api.openai.com",
+    google: "https://generativelanguage.googleapis.com/v1beta/openai",
+    mistral: "https://api.mistral.ai",
+    groq: "https://api.groq.com/openai",
+    openrouter: "https://openrouter.ai/api",
+}
+
+function resolveURL(
+    provider: ProviderId,
+    baseURL: string,
+    path: string,
+): string {
+    const base =
+        baseURL?.trim() || PROVIDER_BASE[provider] || "https://api.openai.com"
+    return base + path
 }
 
 async function readSSEStream(
@@ -112,6 +131,7 @@ export async function streamAI({
             body: JSON.stringify({
                 model,
                 max_tokens: 4096,
+                temperature: 0,
                 stream: true,
                 system: systemPrompt,
                 messages: [{ role: "user", content: userText }],
@@ -144,17 +164,7 @@ export async function streamAI({
         return
     }
 
-    const defaultBase: Partial<Record<ProviderId, string>> = {
-        openai: "https://api.openai.com",
-        google: "https://generativelanguage.googleapis.com/v1beta/openai",
-        mistral: "https://api.mistral.ai",
-        groq: "https://api.groq.com/openai",
-        openrouter: "https://openrouter.ai/api",
-    }
-    const url =
-        (baseURL?.trim() || defaultBase[provider] || "https://api.openai.com") +
-        "/v1/chat/completions"
-
+    const url = resolveURL(provider, baseURL, "/v1/chat/completions")
     const res = await fetch(url, {
         method: "POST",
         signal,
@@ -168,7 +178,7 @@ export async function streamAI({
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userText },
             ],
-            temperature: 0.3,
+            temperature: 0,
             stream: true,
         }),
     })
@@ -269,6 +279,7 @@ export async function callAI({
     systemPrompt,
     userText,
     signal,
+    temperature = 0.3,
 }: CallAIOptions): Promise<string> {
     if (!apiKey) throw new Error("Missing API key.")
     if (!model) throw new Error("Missing model.")
@@ -287,7 +298,8 @@ export async function callAI({
             },
             body: JSON.stringify({
                 model,
-                max_tokens: 4096,
+                max_tokens: 256,
+                temperature,
                 system: systemPrompt,
                 messages: [{ role: "user", content: userText }],
             }),
@@ -302,17 +314,7 @@ export async function callAI({
         return data?.content?.map((b) => b.text ?? "").join("") ?? ""
     }
 
-    const defaultBase: Partial<Record<ProviderId, string>> = {
-        openai: "https://api.openai.com",
-        google: "https://generativelanguage.googleapis.com/v1beta/openai",
-        mistral: "https://api.mistral.ai",
-        groq: "https://api.groq.com/openai",
-        openrouter: "https://openrouter.ai/api",
-    }
-    const url =
-        (baseURL?.trim() || defaultBase[provider] || "https://api.openai.com") +
-        "/v1/chat/completions"
-
+    const url = resolveURL(provider, baseURL, "/v1/chat/completions")
     const res = await fetch(url, {
         method: "POST",
         signal,
@@ -326,7 +328,7 @@ export async function callAI({
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userText },
             ],
-            temperature: 0.3,
+            temperature,
         }),
     })
     if (!res.ok) {
@@ -337,6 +339,21 @@ export async function callAI({
         choices?: Array<{ message?: { content?: string } }>
     }
     return data?.choices?.[0]?.message?.content ?? ""
+}
+
+function parseJSONResponse<T>(raw: string): T | null {
+    let s = raw
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/```\s*$/i, "")
+    const first = s.indexOf("{")
+    const last = s.lastIndexOf("}")
+    if (first >= 0 && last >= 0) s = s.slice(first, last + 1)
+    try {
+        return JSON.parse(s) as T
+    } catch {
+        return null
+    }
 }
 
 export async function synthesizeInstructionName(
@@ -350,15 +367,8 @@ export async function synthesizeInstructionName(
             'Name this editing instruction. Return ONLY JSON like {"name":"Short Name"}. Use 2 to 5 words, title case, no punctuation.',
         userText: options.instruction,
     })
-    const s = raw
-        .trim()
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/```\s*$/i, "")
-    const first = s.indexOf("{")
-    const last = s.lastIndexOf("}")
-    const json = first >= 0 && last >= 0 ? s.slice(first, last + 1) : s
-    const parsed = JSON.parse(json) as { name?: string }
-    return (parsed.name ?? "").trim().slice(0, 48)
+    const parsed = parseJSONResponse<{ name?: string }>(raw)
+    return (parsed?.name ?? "").trim().slice(0, 48)
 }
 
 export async function synthesizeDocumentTitle(
@@ -372,15 +382,8 @@ export async function synthesizeDocumentTitle(
             'Give this document a short title. Return ONLY JSON like {"title":"Short Title"}. Use 2 to 6 words, title case, no punctuation.',
         userText: options.text.slice(0, 600),
     })
-    const s = raw
-        .trim()
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/```\s*$/i, "")
-    const first = s.indexOf("{")
-    const last = s.lastIndexOf("}")
-    const json = first >= 0 && last >= 0 ? s.slice(first, last + 1) : s
-    const parsed = JSON.parse(json) as { title?: string }
-    return (parsed.title ?? "").trim().slice(0, 80)
+    const parsed = parseJSONResponse<{ title?: string }>(raw)
+    return (parsed?.title ?? "").trim().slice(0, 80)
 }
 
 export interface ParseEditsResult {
@@ -390,19 +393,8 @@ export interface ParseEditsResult {
 
 export function parseEditsResponse(raw: string): ParseEditsResult {
     if (!raw) return { edits: [], rawError: "Empty response" }
-    let s = raw.trim()
-    s = s.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "")
-    const first = s.indexOf("{")
-    const last = s.lastIndexOf("}")
-    if (first !== -1 && last !== -1) s = s.slice(first, last + 1)
-    try {
-        const parsed = JSON.parse(s) as { edits?: EditOp[] }
-        if (Array.isArray(parsed?.edits)) return { edits: parsed.edits }
-        return { edits: [], rawError: "No edits[] in response" }
-    } catch (e) {
-        return {
-            edits: [],
-            rawError: "JSON parse failed: " + (e as Error).message,
-        }
-    }
+    const parsed = parseJSONResponse<{ edits?: EditOp[] }>(raw)
+    if (!parsed) return { edits: [], rawError: "JSON parse failed" }
+    if (Array.isArray(parsed.edits)) return { edits: parsed.edits }
+    return { edits: [], rawError: "No edits[] in response" }
 }

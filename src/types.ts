@@ -2,22 +2,6 @@ import type { JSONContent } from "@tiptap/react"
 
 export type SegmentStatus = "pending" | "accepted" | "rejected"
 
-export interface KeepSegment {
-    id: string
-    kind: "keep"
-    text: string
-}
-
-export interface EditSegment {
-    id: string
-    kind: "edit"
-    before: string
-    after: string
-    status: SegmentStatus
-}
-
-export type Segment = KeepSegment | EditSegment
-
 export type EditType = "delete" | "replace" | "insert"
 
 export type SuggestionTag =
@@ -79,24 +63,9 @@ export interface Settings {
     baseURL: string
 }
 
-export interface HistoryEntry {
-    id: string
-    actionId: string
-    name: string
-    glyph: string
-    when: string
-    preview: string
-    snapshot: { text: string; segments: Segment[] }
-}
-
 export interface Stats {
     words: number
     chars: number
-}
-
-export interface Snapshot {
-    text: string
-    segments: Segment[]
 }
 
 export interface SuggestionRange {

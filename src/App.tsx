@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLiveQuery } from "dexie-react-hooks"
 import type { Editor, JSONContent } from "@tiptap/react"
 import {
@@ -7,21 +7,12 @@ import {
     PanelRightClose,
     PanelRightOpen,
 } from "lucide-react"
-import {
-    streamAI,
-    extractEditsFromBuffer,
-    ACTION_INSTRUCTIONS,
-    SYSTEM_TEMPLATE,
-    synthesizeInstructionName,
-    synthesizeDocumentTitle,
-} from "./ai-client"
+import { synthesizeInstructionName } from "./ai-client"
 import { createBlankDocument, db, touchInstruction, upsertDocument } from "./db"
 import {
     applySuggestion,
     focusSuggestion,
-    plainTextWithPositions,
     rejectSuggestionChange,
-    suggestionsFromEdits,
     suggestionsNeedSync,
 } from "./suggestions"
 import {
@@ -31,7 +22,6 @@ import {
 } from "./import-export"
 import type {
     ActionId,
-    EditOp,
     EditSuggestion,
     ProviderId,
     RichDocument,
@@ -40,6 +30,9 @@ import type {
     Stats,
     SuggestionTag,
 } from "./types"
+import { usePersistedState } from "@/hooks/usePersistedState"
+import { useMediaQuery } from "@/hooks/useMediaQuery"
+import { useActionRunner } from "@/hooks/useActionRunner"
 import { Toolbar } from "@/components/Toolbar"
 import { Sidebar, type SidebarMode } from "@/components/Sidebar"
 import { RichEditor } from "@/components/RichEditor"
@@ -50,43 +43,6 @@ import { SettingsModal } from "@/components/modals/SettingsModal"
 import { CustomPromptModal } from "@/components/modals/CustomPromptModal"
 import { ConfirmModal } from "@/components/modals/ConfirmModal"
 import { ExportModal } from "@/components/modals/ExportModal"
-
-function usePersistedState<T>(
-    key: string,
-    initial: T,
-): [T, React.Dispatch<React.SetStateAction<T>>] {
-    const [v, setV] = useState<T>(() => {
-        try {
-            const raw = localStorage.getItem(`editorial:${key}`)
-            if (raw === null) return initial
-            return JSON.parse(raw) as T
-        } catch {
-            return initial
-        }
-    })
-    useEffect(() => {
-        try {
-            localStorage.setItem(`editorial:${key}`, JSON.stringify(v))
-        } catch {}
-    }, [key, v])
-    return [v, setV]
-}
-
-function useMediaQuery(query: string) {
-    const [matches, setMatches] = useState(
-        () => window.matchMedia(query).matches,
-    )
-
-    useEffect(() => {
-        const media = window.matchMedia(query)
-        const update = () => setMatches(media.matches)
-        update()
-        media.addEventListener("change", update)
-        return () => media.removeEventListener("change", update)
-    }, [query])
-
-    return matches
-}
 
 function fallbackInstructionName(instruction: string) {
     const words = instruction
@@ -162,11 +118,6 @@ export default function App() {
     const [suggestionFilter, setSuggestionFilter] = useState<
         SuggestionTag | "all"
     >("all")
-    const [busyAction, setBusyAction] = useState<ActionId | null>(null)
-    const [streamingEditCount, setStreamingEditCount] = useState<number | null>(
-        null,
-    )
-    const stableSuggestionIds = useRef<string[]>([])
     const [error, setError] = useState<string | null>(null)
     const [customOpen, setCustomOpen] = useState(false)
     const [settingsOpen, setSettingsOpen] = useState(false)
@@ -184,12 +135,36 @@ export default function App() {
     const fileInputRef = useRef<HTMLInputElement>(null)
     const saveTimer = useRef<number | null>(null)
     const titleGenInitiated = useRef(new Set<string>())
-    const abortControllerRef = useRef<AbortController | null>(null)
 
     const activeDocument = useMemo(
         () => documents.find((doc) => doc.id === activeDocumentId) ?? null,
         [activeDocumentId, documents],
     )
+
+    const settings: Settings = { provider, model, apiKey, baseURL }
+    const setSettings = (next: Settings) => {
+        setProvider(next.provider)
+        setModel(next.model)
+        setApiKey(next.apiKey)
+        setBaseURL(next.baseURL)
+    }
+
+    const {
+        busyAction,
+        streamingEditCount,
+        runAction,
+        handleCompoundAction,
+        cancelAction,
+    } = useActionRunner({
+        editor,
+        activeDocument,
+        settings,
+        onSuggestionsChange: setLocalSuggestions,
+        onFocusedIdChange: setFocusedSuggestionId,
+        onError: setError,
+        onSettingsOpen: () => setSettingsOpen(true),
+        titleGenInitiated,
+    })
 
     useEffect(() => {
         if (activeDocumentId && !activeDocument) setActiveDocumentId(null)
@@ -207,13 +182,12 @@ export default function App() {
         )
     }, [activeDocument?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-    const settings: Settings = { provider, model, apiKey, baseURL }
-    const setSettings = (next: Settings) => {
-        setProvider(next.provider)
-        setModel(next.model)
-        setApiKey(next.apiKey)
-        setBaseURL(next.baseURL)
-    }
+    useEffect(() => {
+        if (!compactLayout) {
+            setMobileSidebarOpen(false)
+            setMobileSuggestionsOpen(false)
+        }
+    }, [compactLayout])
 
     const fallbackText = activeDocument?.html.replace(/<[^>]*>/g, " ") ?? ""
     const currentText = editorText || fallbackText
@@ -230,13 +204,6 @@ export default function App() {
         ? !mobileSuggestionsOpen
         : suggestionsCollapsed
 
-    useEffect(() => {
-        if (!compactLayout) {
-            setMobileSidebarOpen(false)
-            setMobileSuggestionsOpen(false)
-        }
-    }, [compactLayout])
-
     const persistActiveDocument = useCallback(
         (patch: Partial<RichDocument>) => {
             if (!activeDocument) return
@@ -247,25 +214,6 @@ export default function App() {
             })
         },
         [activeDocument, localSuggestions],
-    )
-
-    const generateDocumentTitle = useCallback(
-        async (docId: string, text: string, suggestions: EditSuggestion[]) => {
-            try {
-                const title = await synthesizeDocumentTitle({
-                    provider,
-                    model,
-                    apiKey,
-                    baseURL,
-                    text,
-                })
-                if (!title) return
-                const latest = await db.documents.get(docId)
-                if (!latest || latest.title !== "Untitled manuscript") return
-                void upsertDocument({ ...latest, title, suggestions })
-            } catch {}
-        },
-        [apiKey, baseURL, model, provider],
     )
 
     const scheduleDocumentSave = useCallback(
@@ -326,189 +274,6 @@ export default function App() {
         },
         [createDocumentFromHtml],
     )
-
-    const runAction = useCallback(
-        async (actionId: ActionId, customInstruction?: string) => {
-            setError(null)
-            if (!editor || !activeDocument) return
-            const source = plainTextWithPositions(editor).text
-            if (!source.trim()) {
-                setError(
-                    "Editor is empty. Paste, drop, or write some text first.",
-                )
-                return
-            }
-            if (!apiKey) {
-                setError("No API key set. Open Settings to add one.")
-                setSettingsOpen(true)
-                return
-            }
-
-            const instruction =
-                actionId === "custom"
-                    ? (customInstruction ?? "")
-                    : ACTION_INSTRUCTIONS[
-                          actionId as Exclude<ActionId, "custom">
-                      ]
-            if (!instruction) return
-
-            setBusyAction(actionId)
-            stableSuggestionIds.current = []
-            const accEdits: EditOp[] = []
-            let bufferCursor = 0
-            let rawBuffer = ""
-            let firstSuggestionFocused = false
-            const abortController = new AbortController()
-            abortControllerRef.current = abortController
-
-            try {
-                await streamAI({
-                    provider,
-                    model,
-                    apiKey,
-                    baseURL,
-                    systemPrompt: SYSTEM_TEMPLATE(instruction),
-                    userText: source,
-                    signal: abortController.signal,
-                    onChunk: (text) => {
-                        rawBuffer += text
-                        const { ops, cursor } = extractEditsFromBuffer(
-                            rawBuffer,
-                            bufferCursor,
-                        )
-                        if (ops.length === 0) return
-                        bufferCursor = cursor
-                        accEdits.push(...ops)
-                        const fresh = suggestionsFromEdits(editor, accEdits)
-                        const merged = fresh.map((s, i) => ({
-                            ...s,
-                            id: stableSuggestionIds.current[i] ?? s.id,
-                        }))
-                        stableSuggestionIds.current = merged.map((s) => s.id)
-                        setLocalSuggestions(merged)
-                        setStreamingEditCount(merged.length)
-                        if (!firstSuggestionFocused && merged[0]) {
-                            firstSuggestionFocused = true
-                            setFocusedSuggestionId(merged[0].id)
-                            focusSuggestion(editor, merged[0])
-                        }
-                    },
-                })
-
-                const finalSuggestions = suggestionsFromEdits(editor, accEdits)
-                const merged = finalSuggestions.map((s, i) => ({
-                    ...s,
-                    id: stableSuggestionIds.current[i] ?? s.id,
-                }))
-                if (merged.length === 0 && accEdits.length === 0) {
-                    // nothing came through — rawBuffer has the full response for error reporting
-                    setError(
-                        `Could not parse editor response.\n\nRaw output:\n${rawBuffer.slice(0, 600)}`,
-                    )
-                    return
-                }
-                setLocalSuggestions(merged)
-                if (!firstSuggestionFocused) {
-                    setFocusedSuggestionId(merged[0]?.id ?? null)
-                    if (merged[0]) focusSuggestion(editor, merged[0])
-                }
-                await upsertDocument({
-                    ...activeDocument,
-                    content: editor.getJSON(),
-                    html: editor.getHTML(),
-                    suggestions: merged,
-                })
-
-                if (
-                    apiKey &&
-                    activeDocument.title === "Untitled manuscript" &&
-                    !titleGenInitiated.current.has(activeDocument.id)
-                ) {
-                    titleGenInitiated.current.add(activeDocument.id)
-                    void generateDocumentTitle(
-                        activeDocument.id,
-                        source,
-                        merged,
-                    )
-                }
-            } catch (e) {
-                if ((e as Error).name !== "AbortError")
-                    setError((e as Error).message || String(e))
-            } finally {
-                setBusyAction(null)
-                setStreamingEditCount(null)
-                abortControllerRef.current = null
-            }
-        },
-        [
-            activeDocument,
-            apiKey,
-            baseURL,
-            editor,
-            generateDocumentTitle,
-            model,
-            provider,
-        ],
-    )
-
-    const handleCompoundAction = useCallback(
-        async (ids: ActionId[]) => {
-            if (ids.length === 0) return
-            if (ids.length === 1) {
-                await runAction(ids[0])
-                return
-            }
-            const numbered = ids
-                .map(
-                    (id, i) =>
-                        `${i + 1}. ${ACTION_INSTRUCTIONS[id as Exclude<ActionId, "custom">]}`,
-                )
-                .join("\n\n")
-            const combined =
-                `Apply ALL of the following editorial goals in a single unified pass. ` +
-                `Address every goal simultaneously with the same set of targeted edits:\n\n` +
-                numbered
-            await runAction("custom", combined)
-        },
-        [runAction],
-    )
-
-    const handleCustomInstruction = async (
-        instruction: string,
-        existingId?: string,
-    ) => {
-        setCustomOpen(false)
-        if (existingId) {
-            await touchInstruction(existingId)
-            await runAction("custom", instruction)
-            return
-        }
-
-        let name = fallbackInstructionName(instruction)
-        if (apiKey) {
-            try {
-                name = await synthesizeInstructionName({
-                    provider,
-                    model,
-                    apiKey,
-                    baseURL,
-                    instruction,
-                })
-            } catch {
-                name = fallbackInstructionName(instruction)
-            }
-        }
-        const item: SavedInstruction = {
-            id: crypto.randomUUID(),
-            name,
-            instruction,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            lastUsedAt: Date.now(),
-        }
-        await db.instructions.add(item)
-        await runAction("custom", instruction)
-    }
 
     const updateSuggestions = (next: EditSuggestion[]) => {
         setLocalSuggestions(next)
@@ -580,6 +345,43 @@ export default function App() {
     const handleAction = (id: ActionId) => {
         if (id === "custom") setCustomOpen(true)
         else void runAction(id)
+    }
+
+    const handleCustomInstruction = async (
+        instruction: string,
+        existingId?: string,
+    ) => {
+        setCustomOpen(false)
+        if (existingId) {
+            await touchInstruction(existingId)
+            await runAction("custom", instruction)
+            return
+        }
+
+        let name = fallbackInstructionName(instruction)
+        if (apiKey) {
+            try {
+                name = await synthesizeInstructionName({
+                    provider,
+                    model,
+                    apiKey,
+                    baseURL,
+                    instruction,
+                })
+            } catch {
+                name = fallbackInstructionName(instruction)
+            }
+        }
+        const item: SavedInstruction = {
+            id: crypto.randomUUID(),
+            name,
+            instruction,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            lastUsedAt: Date.now(),
+        }
+        await db.instructions.add(item)
+        await runAction("custom", instruction)
     }
 
     const onExport = async (format: ExportFormat) => {
@@ -767,7 +569,7 @@ export default function App() {
                     onClear={() => setConfirmClear(true)}
                     onSettings={() => setSettingsOpen(true)}
                     busy={!!busyAction}
-                    onCancel={() => abortControllerRef.current?.abort()}
+                    onCancel={cancelAction}
                     streamingEditCount={streamingEditCount}
                     hasText={hasText}
                     hasDocument={hasDocument}
