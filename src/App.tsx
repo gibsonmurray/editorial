@@ -207,6 +207,10 @@ export default function App() {
     const persistActiveDocument = useCallback(
         (patch: Partial<RichDocument>) => {
             if (!activeDocument) return
+            if (saveTimer.current) {
+                window.clearTimeout(saveTimer.current)
+                saveTimer.current = null
+            }
             void upsertDocument({
                 ...activeDocument,
                 suggestions: localSuggestions,
@@ -232,6 +236,7 @@ export default function App() {
             if (!activeDocument) return
             if (saveTimer.current) window.clearTimeout(saveTimer.current)
             saveTimer.current = window.setTimeout(() => {
+                saveTimer.current = null
                 void upsertDocument({
                     ...activeDocument,
                     content,

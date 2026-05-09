@@ -254,12 +254,14 @@ export function suggestionsFromEdits(
 
 function sameSuggestionState(a: EditSuggestion, b: EditSuggestion) {
     return (
+        a.id === b.id &&
         a.status === b.status &&
         a.range.from === b.range.from &&
         a.range.to === b.range.to &&
         a.type === b.type &&
         a.before === b.before &&
-        a.after === b.after
+        a.after === b.after &&
+        a.tag === b.tag
     )
 }
 

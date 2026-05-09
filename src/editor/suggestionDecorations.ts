@@ -91,12 +91,15 @@ function collectSuggestionSpans(doc: Editor["state"]["doc"]) {
         const from = pos
         const to = pos + node.nodeSize
         const existing = byId.get(mark.attrs.id)
-        if (
-            existing &&
-            sameAttrs(existing.suggestion, mark.attrs) &&
-            existing.suggestion.range.to === from
-        ) {
-            existing.suggestion.range.to = to
+        if (existing && sameAttrs(existing.suggestion, mark.attrs)) {
+            existing.suggestion.range.from = Math.min(
+                existing.suggestion.range.from,
+                from,
+            )
+            existing.suggestion.range.to = Math.max(
+                existing.suggestion.range.to,
+                to,
+            )
             return
         }
 
