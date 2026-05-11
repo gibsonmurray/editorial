@@ -6,6 +6,7 @@ import {
     extractEditsFromBuffer,
     streamAI,
     synthesizeDocumentTitle,
+    synthesizeAuthorStyle,
 } from "@/ai-client"
 import { db, upsertDocument } from "@/db"
 import {
@@ -101,9 +102,28 @@ export function useActionRunner({
             abortControllerRef.current = abortController
 
             try {
+                let authorStyle = activeDocument.authorStyle
+                if (!authorStyle) {
+                    try {
+                        const synthesized = await synthesizeAuthorStyle({
+                            ...settings,
+                            text: source,
+                        })
+                        if (synthesized) {
+                            authorStyle = synthesized
+                            void upsertDocument({
+                                ...activeDocument,
+                                authorStyle,
+                            })
+                        }
+                    } catch {
+                        /* ignore style synthesis failures */
+                    }
+                }
+
                 await streamAI({
                     ...settings,
-                    systemPrompt: SYSTEM_TEMPLATE(instruction),
+                    systemPrompt: SYSTEM_TEMPLATE(instruction, authorStyle),
                     userText: source,
                     signal: abortController.signal,
                     onChunk: (text) => {

@@ -91,6 +91,8 @@ export interface RichDocument {
     suggestions: EditSuggestion[]
     createdAt: number
     updatedAt: number
+    /** Optional short description of the author's style/voice to preserve during edits */
+    authorStyle?: string
 }
 
 export interface SavedInstruction {

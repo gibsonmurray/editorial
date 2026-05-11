@@ -13,6 +13,9 @@ export default defineConfig({
         tailwindcss(),
         react(),
         VitePWA({
+            devOptions: {
+                enabled: true, // Enables PWA inspection
+            },
             registerType: "autoUpdate",
             injectRegister: "auto",
             includeAssets: [

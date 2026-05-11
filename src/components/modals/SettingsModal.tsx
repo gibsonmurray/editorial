@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Eye, EyeOff } from "lucide-react"
 import { Modal } from "./Modal"
-import type { Settings, ProviderId } from "@/types"
+import { synthesizeAuthorStyle } from "@/ai-client"
+import type { Settings, ProviderId, RichDocument } from "@/types"
 
 const PROVIDERS = [
     { id: "anthropic", label: "Anthropic", defaultModel: "claude-opus-4-5" },
@@ -21,6 +22,8 @@ export interface SettingsModalProps {
     onClose: () => void
     settings: Settings
     setSettings: (s: Settings) => void
+    activeDocument?: RichDocument | null
+    persistActiveDocument?: (patch: Partial<RichDocument>) => void
 }
 
 export function SettingsModal({
@@ -28,10 +31,18 @@ export function SettingsModal({
     onClose,
     settings,
     setSettings,
+    activeDocument,
+    persistActiveDocument,
 }: SettingsModalProps) {
     const [showKey, setShowKey] = useState(false)
+    const [authorStyle, setAuthorStyle] = useState("")
+    const [synthesizing, setSynthesizing] = useState(false)
     const update = <K extends keyof Settings>(k: K, v: Settings[K]) =>
         setSettings({ ...settings, [k]: v })
+
+    useEffect(() => {
+        setAuthorStyle(activeDocument?.authorStyle ?? "")
+    }, [activeDocument?.id, open])
 
     return (
         <Modal
@@ -147,6 +158,67 @@ export function SettingsModal({
             >
                 ※ Settings are stored in your browser only. Requests go directly
                 from your browser to the provider.
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+                <label className="field-label">Author style (document)</label>
+                <textarea
+                    className="input"
+                    value={authorStyle}
+                    onChange={(e) => setAuthorStyle(e.target.value)}
+                    placeholder={
+                        activeDocument
+                            ? "Short description of the author's voice (e.g. 'concise, informal, uses short sentences')"
+                            : "Open a document to edit its author style"
+                    }
+                    rows={3}
+                    disabled={!activeDocument}
+                    style={{ width: "100%", resize: "vertical" }}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button
+                        type="button"
+                        className="btn"
+                        disabled={!activeDocument}
+                        onClick={() => {
+                            if (!activeDocument || !persistActiveDocument) return
+                            persistActiveDocument({ authorStyle })
+                        }}
+                    >
+                        Save
+                    </button>
+                    <button
+                        type="button"
+                        className="btn"
+                        disabled={!activeDocument || !settings.apiKey || synthesizing}
+                        onClick={async () => {
+                            if (!activeDocument) return
+                            setSynthesizing(true)
+                            try {
+                                const text = (activeDocument.html || "").replace(/<[^>]*>/g, " ")
+                                const style = await synthesizeAuthorStyle({
+                                    provider: settings.provider,
+                                    model: settings.model,
+                                    apiKey: settings.apiKey,
+                                    baseURL: settings.baseURL,
+                                    text,
+                                })
+                                setAuthorStyle(style)
+                                if (persistActiveDocument)
+                                    persistActiveDocument({ authorStyle: style })
+                            } catch {
+                                /* ignore */
+                            } finally {
+                                setSynthesizing(false)
+                            }
+                        }}
+                    >
+                        {synthesizing ? "Synthesizing…" : "Resynthesize"}
+                    </button>
+                </div>
+                <div style={{ marginTop: 8, fontSize: 12, color: "var(--color-ink-faint)" }}>
+                    This short description is stored with the document and used to preserve the author's voice when making edits.
+                </div>
             </div>
         </Modal>
     )

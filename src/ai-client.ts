@@ -21,16 +21,20 @@ export const ACTION_INSTRUCTIONS: Record<CoreActionId, string> = {
         "Tighten the prose. Remove filler words, redundancies, and weak hedges. Keep the substance intact.",
 }
 
-export const SYSTEM_TEMPLATE = (instruction: string): string =>
-    `You are a professional editor. The user will give you text to edit.
+export const SYSTEM_TEMPLATE = (instruction: string, authorStyle?: string): string => {
+        const styleBlock = authorStyle
+                ? `\n\nAuthor style: ${authorStyle}\nPreserve this author's voice, tone, sentence rhythm, and preferred word choices when making edits. Match the author's level of formality, use of contractions, and sentence length where possible.`
+                : ""
+
+        return `You are a professional editor. The user will give you text to edit.
 
 Return ONLY a JSON object (no markdown, no explanation, no code fences) in this exact shape:
 {
-  "edits": [
-    { "type": "delete", "original": "text to remove", "tag": "deletion" },
-    { "type": "insert", "after": "anchor text", "text": "text to add", "tag": "insertion" },
-    { "type": "replace", "original": "old text", "replacement": "new text", "tag": "grammar" }
-  ]
+    "edits": [
+        { "type": "delete", "original": "text to remove", "tag": "deletion" },
+        { "type": "insert", "after": "anchor text", "text": "text to add", "tag": "insertion" },
+        { "type": "replace", "original": "old text", "replacement": "new text", "tag": "grammar" }
+    ]
 }
 
 Rules:
@@ -42,7 +46,8 @@ Rules:
 - Do not replace curly/smart quotes or apostrophes (‘’“”) with straight ones ('"). You may correct a curly quote that is the wrong direction (e.g. ‘ used where ’ is correct).
 - If no changes are needed, return {"edits": []}.
 
-Apply this rule: ${instruction}`
+Apply this rule: ${instruction}${styleBlock}`
+}
 
 export interface CallAIOptions {
     provider: ProviderId
@@ -384,6 +389,21 @@ export async function synthesizeDocumentTitle(
     })
     const parsed = parseJSONResponse<{ title?: string }>(raw)
     return (parsed?.title ?? "").trim().slice(0, 80)
+}
+
+export async function synthesizeAuthorStyle(
+    options: Omit<CallAIOptions, "systemPrompt" | "userText"> & {
+        text: string
+    },
+): Promise<string> {
+    const raw = await callAI({
+        ...options,
+        systemPrompt:
+            'Describe the author\'s writing style in one short paragraph. Return ONLY JSON like {"style":"Concise, direct, uses short sentences, informal tone"}. Focus on tone, formality, sentence length, and common word choices.',
+        userText: options.text.slice(0, 1200),
+    })
+    const parsed = parseJSONResponse<{ style?: string }>(raw)
+    return (parsed?.style ?? "").trim().slice(0, 600)
 }
 
 export interface ParseEditsResult {

@@ -764,6 +764,8 @@ export default function App() {
                 onClose={() => setSettingsOpen(false)}
                 settings={settings}
                 setSettings={setSettings}
+                activeDocument={activeDocument}
+                persistActiveDocument={persistActiveDocument}
             />
             <CustomPromptModal
                 open={customOpen}
